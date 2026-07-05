@@ -15,6 +15,8 @@ def _has_supported_api_key() -> bool:
     return any(
         os.getenv(key)
         for key in (
+            "OPENAI_API_KEY",
+            "OPENAI_BASE_URL",
             "OPENROUTER_API_KEY",
             "CHUTES_API_KEY",
             "MINIMAX_API_KEY",

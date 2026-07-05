@@ -134,7 +134,9 @@ def _parse_sse_data(line: str) -> JsonObject | None:
     except json.JSONDecodeError:
         return None
 
-    return cast(JsonObject, parsed) if isinstance(parsed, dict) else None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
 
 
 async def _iter_sse_events(response: niquests.AsyncResponse) -> AsyncIterator[JsonObject]:

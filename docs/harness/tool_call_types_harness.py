@@ -34,9 +34,11 @@ from tinyagent.agent_types import (
 )
 from tinyagent.alchemy_provider import OpenAICompatModel, stream_alchemy_openai_completions
 
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1/chat/completions"
 DEFAULT_OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 DEFAULT_CHUTES_BASE_URL = "https://llm.chutes.ai/v1/chat/completions"
 DEFAULT_MINIMAX_BASE_URL = "https://api.minimax.io/v1/chat/completions"
+DEFAULT_OPENAI_MODEL = "gpt-5-nano"
 DEFAULT_OPENROUTER_MODEL = "google/gemini-2.0-flash-001"
 DEFAULT_CHUTES_MODEL = "Qwen/Qwen3-Coder-Next-TEE"
 DEFAULT_MINIMAX_MODEL = "MiniMax-M2.5"
@@ -64,6 +66,14 @@ def _debug_enabled() -> bool:
 
 
 def _resolve_provider_and_model() -> OpenAICompatModel | None:
+    if os.getenv("OPENAI_API_KEY") or os.getenv("OPENAI_BASE_URL"):
+        return OpenAICompatModel(
+            provider="openai",
+            api="openai-completions",
+            id=os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
+            base_url=os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL),
+            max_tokens=int(os.getenv("HARNESS_MAX_TOKENS", str(DEFAULT_HARNESS_MAX_TOKENS))),
+        )
     if os.getenv("OPENROUTER_API_KEY"):
         return OpenAICompatModel(
             provider="openrouter",
@@ -102,7 +112,8 @@ def _resolve_api_key(provider: str) -> str | None:
     env_key = env_map.get(provider.lower())
     if not env_key:
         return None
-    return os.getenv(env_key)
+    # Dummy key for local/dev endpoints when no real key is set
+    return os.getenv(env_key, "sk-dummy")
 
 
 class CapturingStreamResponse(StreamResponse):

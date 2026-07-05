@@ -13,7 +13,7 @@ import os
 from dataclasses import dataclass
 from typing import Literal, Protocol, TypeAlias, cast
 
-from pydantic import BaseModel, ConfigDict, field_validator
+import msgspec
 
 from .agent_types import (
     Context,
@@ -68,8 +68,12 @@ class _BindingModule(Protocol):
     ) -> BindingStreamHandle: ...
 
 
-class _BindingPayloadModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class _BindingPayloadModel(msgspec.Struct, kw_only=True, forbid_unknown_fields=True):
+    def model_dump(self, exclude_none: bool = False) -> dict[str, object]:
+        result = msgspec.structs.asdict(self)
+        if exclude_none:
+            return {k: v for k, v in result.items() if v is not None}
+        return result
 
 
 class RustBindingModel(ProviderMetadataModel):
@@ -77,29 +81,19 @@ class RustBindingModel(ProviderMetadataModel):
 
     provider: str = "openrouter"
     id: str = "moonshotai/kimi-k2.5"
-    api: BindingApi | Literal[""] = ""
+    api: BindingApi | Literal[""] = ""  # type: ignore[override]
     base_url: str | None = None
 
-    @field_validator("api")
-    @classmethod
-    def _validate_api(cls, value: str) -> str:
-        del cls
+    def __post_init__(self) -> None:
         valid = {"", "anthropic-messages", "openai-completions", "minimax-completions"}
-        if value not in valid:
+        if self.api not in valid:
             raise ValueError(
                 "api must be one of '', 'anthropic-messages', "
                 "'openai-completions', or 'minimax-completions'"
             )
-        return value
-
-    @field_validator("base_url")
-    @classmethod
-    def _normalize_base_url(cls, value: str | None) -> str | None:
-        del cls
-        if value is None:
-            return None
-        stripped = value.strip()
-        return stripped or None
+        if self.base_url is not None:
+            stripped = self.base_url.strip()
+            msgspec.structs.force_setattr(self, "base_url", stripped or None)
 
 
 class BindingModelPayload(_BindingPayloadModel):
@@ -107,11 +101,11 @@ class BindingModelPayload(_BindingPayloadModel):
     provider: str
     api: BindingApi
     base_url: str
+    context_window: int
+    max_tokens: int
     name: str | None = None
     headers: dict[str, str] | None = None
     reasoning: ReasoningMode = False
-    context_window: int
-    max_tokens: int
 
 
 class BindingToolPayload(_BindingPayloadModel):
@@ -121,8 +115,8 @@ class BindingToolPayload(_BindingPayloadModel):
 
 
 class BindingContextPayload(_BindingPayloadModel):
-    system_prompt: str = ""
     messages: list[dict[str, object]]
+    system_prompt: str = ""
     tools: list[BindingToolPayload] | None = None
 
 

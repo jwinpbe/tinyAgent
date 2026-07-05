@@ -77,7 +77,11 @@ def _get_alchemy_module() -> _AlchemyModule:
                 f"{module_name}: {type(exc).__name__}: {exc}" for module_name, exc in import_errors
             )
             cause = next(
-                (exc for _, exc in import_errors if not isinstance(exc, ModuleNotFoundError)),
+                (
+                    exc
+                    for module_name, exc in import_errors
+                    if not isinstance(exc, ModuleNotFoundError)
+                ),
                 import_errors[-1][1],
             )
             raise RuntimeError(
@@ -111,13 +115,11 @@ def _convert_tools(tools: list[AgentTool] | None) -> list[dict[str, object]] | N
         return None
     out: list[dict[str, object]] = []
     for t in tools:
-        out.append(
-            {
-                "name": t.name,
-                "description": t.description,
-                "parameters": t.parameters or {"type": "object", "properties": {}},
-            }
-        )
+        out.append({
+            "name": t.name,
+            "description": t.description,
+            "parameters": t.parameters or {"type": "object", "properties": {}},
+        })
     return out
 
 

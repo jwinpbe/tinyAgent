@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 from collections.abc import Sequence
 from typing import cast
 
@@ -44,13 +45,13 @@ def _annotate_user_messages(messages: list[AgentMessage]) -> list[AgentMessage]:
             continue
 
         # Avoid mutating the original structures.
-        annotated_block = last_block.model_copy(deep=True)
-        annotated_block.cache_control = EPHEMERAL_CACHE.model_copy(deep=True)
+        annotated_block = copy.deepcopy(last_block)
+        annotated_block.cache_control = copy.deepcopy(EPHEMERAL_CACHE)
 
         new_content = list(msg.content)
         new_content[-1] = annotated_block
 
-        updated_message = msg.model_copy(deep=True)
+        updated_message = copy.deepcopy(msg)
         updated_message.content = new_content
 
         new_messages[i] = updated_message
@@ -88,8 +89,7 @@ def _any_block_has_cache_control(blocks: Sequence[object]) -> bool:
 def _context_has_cache_control(context: Context) -> bool:
     """Check if any message in the context has cache_control on a text block."""
     for msg in context.messages:
-        content = cast(list[object], msg.content)
-        for block in content:
+        for block in msg.content:
             if isinstance(block, TextContent) and block.cache_control is not None:
                 return True
     return False
@@ -112,7 +112,7 @@ def _convert_block_to_structured(block: object) -> dict[str, object] | None:
     return None
 
 
-def _convert_blocks_structured(content: list[object]) -> list[dict[str, object]]:
+def _convert_blocks_structured(content: Sequence[object]) -> list[dict[str, object]]:
     """Convert content blocks to structured format preserving cache_control."""
     result: list[dict[str, object]] = []
     for block in content:
@@ -122,7 +122,7 @@ def _convert_blocks_structured(content: list[object]) -> list[dict[str, object]]
     return result
 
 
-def _extract_text_parts(content: list[object]) -> list[str]:
+def _extract_text_parts(content: Sequence[object]) -> list[str]:
     """Extract text parts from content blocks."""
     text_parts: list[str] = []
     for block in content:
@@ -134,10 +134,9 @@ def _extract_text_parts(content: list[object]) -> list[str]:
 
 def _convert_user_message(msg: UserMessage) -> dict[str, object]:
     """Convert a UserMessage to OpenAI-compatible dict format."""
-    content = cast(list[object], msg.content)
-    if _any_block_has_cache_control(content):
-        return {"role": "user", "content": _convert_blocks_structured(content)}
-    return {"role": "user", "content": "\n".join(_extract_text_parts(content))}
+    if _any_block_has_cache_control(msg.content):
+        return {"role": "user", "content": _convert_blocks_structured(msg.content)}
+    return {"role": "user", "content": "\n".join(_extract_text_parts(msg.content))}
 
 
 def _build_usage_dict(usage: dict[str, object]) -> JsonObject:

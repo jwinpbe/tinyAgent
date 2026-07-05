@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import cast
 
+import msgspec
 import pytest
-from pydantic import ValidationError
+from msgspec import ValidationError
 
 from tinyagent.agent_types import (
     Context,
@@ -63,13 +64,14 @@ def test_resolve_api_key_supports_kimi(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_rust_binding_model_rejects_legacy_api_alias() -> None:
-    with pytest.raises(ValidationError, match="openai-completions"):
-        RustBindingModel.model_validate(
+    with pytest.raises(ValidationError, match="Invalid enum value"):
+        msgspec.convert(
             {
                 "provider": "openai",
                 "id": "gpt-4o-mini",
                 "api": "openai",
-            }
+            },
+            RustBindingModel,
         )
 
 

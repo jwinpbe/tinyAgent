@@ -29,7 +29,7 @@ def _append_collector() -> tuple[list[AgentMessage], Callable[[AgentMessage], No
 def test_handle_agent_event_updates_pending_tool_calls_set() -> None:
     state = AgentState(pending_tool_calls={"existing"})
     partial_holder: list[AgentMessage | None] = [None]
-    _, append_message = _append_collector()
+    appended, append_message = _append_collector()
 
     _handle_agent_event(
         state,
@@ -57,7 +57,7 @@ def test_handle_agent_event_updates_pending_tool_calls_set() -> None:
 def test_handle_agent_event_turn_end_captures_assistant_error_message() -> None:
     state = AgentState()
     partial_holder: list[AgentMessage | None] = [None]
-    _, append_message = _append_collector()
+    appended, append_message = _append_collector()
 
     assistant_error_message = AssistantMessage(
         content=[TextContent(text="")],
@@ -75,7 +75,7 @@ def test_handle_agent_event_turn_end_captures_assistant_error_message() -> None:
 def test_handle_agent_event_turn_end_ignores_non_assistant_message() -> None:
     state = AgentState(error="keep-existing")
     partial_holder: list[AgentMessage | None] = [None]
-    _, append_message = _append_collector()
+    appended, append_message = _append_collector()
 
     _handle_agent_event(
         state,

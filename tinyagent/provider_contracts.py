@@ -7,9 +7,15 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Literal, Protocol, TypeAlias, cast
 
-from pydantic import BaseModel
+import msgspec
 
-from .agent_types import AssistantMessage, AssistantMessageEvent, JsonObject, Model
+from .agent_types import (
+    AssistantMessage,
+    AssistantMessageEvent,
+    JsonObject,
+    Model,
+    ModelDumpable,
+)
 
 ReasoningEffort: TypeAlias = Literal["minimal", "low", "medium", "high", "xhigh"]
 ReasoningMode: TypeAlias = bool | ReasoningEffort
@@ -75,7 +81,7 @@ class BindingStreamResponseBase(AsyncIterator[AssistantMessageEvent]):
             return raw_event
         if not isinstance(raw_event, dict):
             raise RuntimeError(self.invalid_event_message)
-        return AssistantMessageEvent.model_validate(raw_event)
+        return msgspec.convert(raw_event, AssistantMessageEvent)
 
 
 def missing_keys(data: dict[str, object], required: frozenset[str]) -> list[str]:
@@ -109,12 +115,13 @@ def validate_assistant_message_contract(
     where: str,
     require_usage: bool,
 ) -> AssistantMessage:
-    if isinstance(raw_message, AssistantMessage):
-        message = raw_message
-    elif isinstance(raw_message, dict):
-        message = AssistantMessage.model_validate(raw_message)
-    else:
-        raise RuntimeError(f"{where}: assistant message must be a dict")
+    match raw_message:
+        case AssistantMessage():
+            message = raw_message
+        case dict():
+            message = msgspec.convert(raw_message, AssistantMessage)
+        case _:
+            raise RuntimeError(f"{where}: assistant message must be a dict")
 
     if require_usage:
         validate_usage_contract(message.usage, where=where)
@@ -145,5 +152,5 @@ def resolve_model_metadata(
     )
 
 
-def dump_model_payload(payload: BaseModel) -> dict[str, object]:
+def dump_model_payload(payload: ModelDumpable) -> dict[str, object]:
     return payload.model_dump(exclude_none=True)

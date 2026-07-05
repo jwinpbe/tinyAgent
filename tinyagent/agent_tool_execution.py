@@ -7,7 +7,7 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
-from pydantic import BaseModel, Field
+import msgspec
 
 from .agent_types import (
     AfterToolCallFn,
@@ -33,8 +33,8 @@ from .agent_types import (
 T = TypeVar("T")
 
 
-class ToolExecutionResult(BaseModel):
-    tool_results: list[ToolResultMessage] = Field(default_factory=list)
+class ToolExecutionResult(msgspec.Struct, kw_only=True):
+    tool_results: list[ToolResultMessage] = []
     steering_messages: list[AgentMessage] | None = None
     terminate: bool = False
 

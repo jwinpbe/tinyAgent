@@ -20,6 +20,7 @@ from .agent_types import (
     AgentTool,
     AssistantMessage,
     BeforeToolCallFn,
+    CustomAgentMessage,
     ImageContent,
     MaybeAwaitable,
     Message,
@@ -41,6 +42,56 @@ from .agent_types import (
     is_turn_end_event,
 )
 from .caching import add_cache_breakpoints
+
+import msgspec
+
+
+def _restore_agent_state(data: dict[str, object]) -> AgentState:
+    """Restore AgentState from dict, handling non-convertible fields."""
+    tools_raw = data.get("tools", [])
+    tools: list[AgentTool] = (
+        [
+            AgentTool(
+                name=t.get("name", ""),
+                description=t.get("description", ""),
+                parameters=t.get("parameters", {}),
+                label=t.get("label", ""),
+                execute=None,
+            )
+            for t in tools_raw
+        ]
+        if isinstance(tools_raw, list)
+        else []
+    )
+
+    messages_raw = data.get("messages", [])
+    messages: list[AgentMessage] = []
+    if isinstance(messages_raw, list):
+        for m in messages_raw:
+            if not isinstance(m, dict):
+                continue
+            role = m.get("role", "")
+            match role:
+                case "user":
+                    messages.append(msgspec.convert(m, UserMessage))
+                case "assistant":
+                    messages.append(msgspec.convert(m, AssistantMessage))
+                case "tool_result":
+                    messages.append(msgspec.convert(m, ToolResultMessage))
+                case _:
+                    messages.append(msgspec.convert(m, CustomAgentMessage))
+
+    model_raw = data.get("model")
+    return AgentState(
+        system_prompt=data.get("system_prompt", ""),
+        model=msgspec.convert(model_raw, Model) if model_raw else None,
+        thinking_level=data.get("thinking_level", ThinkingLevel.OFF),
+        tools=tools,
+        messages=messages,
+        is_streaming=False,
+        pending_tool_calls=set(data.get("pending_tool_calls", [])),
+        error=data.get("error"),
+    )
 
 
 def _on_message_start_or_update(
@@ -192,7 +243,7 @@ def extract_text(message: AgentMessage | None) -> str:
 
     if not message:
         return ""
-    if not isinstance(message, UserMessage | AssistantMessage | ToolResultMessage):
+    if not isinstance(message, UserMessage | AssistantMessage | ToolResultMessage):  # type: ignore[arg-type]
         return ""
 
     parts: list[str] = []
@@ -285,7 +336,10 @@ class Agent:
         self._state = AgentState()
 
         if opts.initial_state:
-            self._state = AgentState.model_validate(opts.initial_state)
+            if isinstance(opts.initial_state, dict):
+                self._state = _restore_agent_state(opts.initial_state)
+            else:
+                self._state = opts.initial_state
         self._listeners: set[Callable[[AgentEvent], None]] = set()
         self._abort_event: asyncio.Event | None = None
         self._convert_to_llm = opts.convert_to_llm or default_convert_to_llm
@@ -541,7 +595,7 @@ class Agent:
                     continue
 
                 new_text = extract_text(msg_obj)
-                delta = new_text[len(current) :] if new_text.startswith(current) else new_text
+                delta = new_text.removeprefix(current)
                 current = new_text
                 if delta:
                     yield delta

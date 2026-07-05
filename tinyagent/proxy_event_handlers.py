@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from typing import Literal, TypeAlias, TypeGuard, cast
+from typing import Literal, TypeAlias, TypeGuard
 
 from .agent_types import (
-    STOP_REASONS,
     AssistantContent,
     AssistantMessage,
     AssistantMessageEvent,
@@ -28,7 +27,9 @@ def parse_streaming_json(json_str: str) -> JsonObject | None:
             parsed_raw = json.loads(value)
         except json.JSONDecodeError:
             return None
-        return cast(JsonObject, parsed_raw) if isinstance(parsed_raw, dict) else None
+        if not isinstance(parsed_raw, dict):
+            return None
+        return parsed_raw
 
     parsed = _parse(json_str)
     if parsed is not None:
@@ -79,9 +80,11 @@ def _is_tool_call(content: AssistantContent | None) -> TypeGuard[ToolCallContent
 
 
 def _normalize_stop_reason(value: object, default: StopReason) -> StopReason:
-    if isinstance(value, str) and value in STOP_REASONS:
-        return cast(StopReason, value)
-    return default
+    match value:
+        case "complete" | "error" | "aborted" | "tool_calls" | "stop" | "length" | "tool_use":
+            return value  # type: ignore[return-value]
+        case _:
+            return default
 
 
 def _handle_start_event(
@@ -238,7 +241,7 @@ def _handle_toolcall_delta(
 
     content.partial_json = (content.partial_json or "") + delta
     parsed_args = parse_streaming_json(content.partial_json)
-    content.arguments = parsed_args if parsed_args else {}
+    content.arguments = parsed_args or {}
 
     content_list = _ensure_content_slot(partial, content_index)
     content_list[content_index] = content

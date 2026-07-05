@@ -6,23 +6,20 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal, Protocol, TypeAlias, TypeGuard, TypeVar, Union, runtime_checkable
+from typing import Any, Literal, Protocol, TypeAlias, TypeGuard, TypeVar, Union, runtime_checkable
 
-from pydantic import BaseModel, ConfigDict, Field
-from typing_extensions import TypeAliasType
+import msgspec
+from msgspec.structs import StructMeta  # type: ignore[attr-defined]
 
 # ------------------------------
 # JSON-ish helper types
 # ------------------------------
 
-JsonPrimitive: TypeAlias = str | int | float | bool | None
-JsonValue = TypeAliasType(
-    "JsonValue",
-    "JsonPrimitive | list[JsonValue] | dict[str, JsonValue]",
-)
-JsonObject: TypeAlias = dict[str, JsonValue]
+JsonPrimitive = str | int | float | bool | None
+JsonValue = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
+JsonObject = dict[str, Any]
 
-ZERO_USAGE: JsonObject = {
+ZERO_USAGE: dict[str, Any] = {
     "input": 0,
     "output": 0,
     "cache_read": 0,
@@ -43,10 +40,53 @@ ZERO_USAGE: JsonObject = {
 # ------------------------------
 
 
-class _AgentBaseModel(BaseModel):
-    """Shared model configuration for migrated message/state models."""
+class _AgentBaseModel(msgspec.Struct, kw_only=True):
+    """Shared base for migrated message/state models."""
 
-    model_config = ConfigDict(arbitrary_types_allowed=True, extra="allow")
+    def model_dump(self, exclude_none: bool = False) -> dict[str, object]:
+        result = msgspec.structs.asdict(self)
+        if exclude_none:
+            return {k: v for k, v in result.items() if v is not None}
+        return result
+
+    @classmethod
+    def model_validate(cls, data: dict[str, object]) -> "_AgentBaseModel":
+        return msgspec.convert(data, cls)
+
+
+class _TaggedContentMeta(StructMeta):
+    """Metaclass that enables tagged unions with `type` as the tag field."""
+
+    def __new__(mcls, name, bases, ns, **kw):
+        kw.setdefault("tag_field", "type")
+        kw.setdefault("tag", True)
+        return super().__new__(mcls, name, bases, ns, **kw)
+
+    def __init__(cls, name, bases, ns, **kw):
+        super().__init__(name, bases, ns, **kw)
+        # Inject model_dump override to include the tag/role property.
+        # Delegates to the base class method to avoid duplicating exclude_none logic.
+        if "model_dump" not in ns:
+
+            def _model_dump(self, exclude_none: bool = False) -> dict[str, object]:
+                result = msgspec.to_builtins(self)
+                if exclude_none:
+
+                    def _strip_none(obj):
+                        if isinstance(obj, dict):
+                            return {k: _strip_none(v) for k, v in obj.items() if v is not None}
+                        if isinstance(obj, list):
+                            return [_strip_none(item) for item in obj]
+                        return obj
+
+                    result = _strip_none(result)
+                # Include the tag field from the property (role for messages, type for content)
+                for prop in ("role", "type"):
+                    if hasattr(self, prop) and prop not in result:
+                        result[prop] = getattr(self, prop)
+                return result
+
+            cls.model_dump = _model_dump
 
 
 @runtime_checkable
@@ -98,40 +138,52 @@ class CacheControl(_AgentBaseModel):
     type: str | None = None
 
 
-class TextContent(_AgentBaseModel):
+class TextContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="text"):
     """Text content block."""
 
-    type: Literal["text"] = "text"
     text: str | None = None
     text_signature: str | None = None
     cache_control: CacheControl | None = None
 
+    @property
+    def type(self) -> Literal["text"]:
+        return "text"
 
-class ImageContent(_AgentBaseModel):
+
+class ImageContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="image"):
     """Image content block."""
 
-    type: Literal["image"] = "image"
     url: str | None = None
     mime_type: str | None = None
 
+    @property
+    def type(self) -> Literal["image"]:
+        return "image"
 
-class ThinkingContent(_AgentBaseModel):
+
+class ThinkingContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="thinking"):
     """Thinking content block."""
 
-    type: Literal["thinking"] = "thinking"
     thinking: str | None = None
     thinking_signature: str | None = None
     cache_control: CacheControl | None = None
 
+    @property
+    def type(self) -> Literal["thinking"]:
+        return "thinking"
 
-class ToolCallContent(_AgentBaseModel):
+
+class ToolCallContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="tool_call"):
     """Tool call content block."""
 
-    type: Literal["tool_call"] = "tool_call"
     id: str | None = None
     name: str | None = None
-    arguments: JsonObject = Field(default_factory=dict)
+    arguments: dict[str, Any] = {}
     partial_json: str | None = None
+
+    @property
+    def type(self) -> Literal["tool_call"]:
+        return "tool_call"
 
 
 ToolCall: TypeAlias = ToolCallContent
@@ -139,12 +191,15 @@ ToolCall: TypeAlias = ToolCallContent
 AssistantContent: TypeAlias = TextContent | ThinkingContent | ToolCallContent
 
 
-class UserMessage(_AgentBaseModel):
+class UserMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="user"):
     """User message for LLM."""
 
-    role: Literal["user"] = "user"
-    content: list[TextContent | ImageContent] = Field(default_factory=list)
+    content: list[TextContent | ImageContent] = []
     timestamp: int | None = None
+
+    @property
+    def role(self) -> Literal["user"]:
+        return "user"
 
 
 StopReason: TypeAlias = Literal[
@@ -157,54 +212,79 @@ StopReason: TypeAlias = Literal[
     "tool_use",
 ]
 
-STOP_REASONS: frozenset[StopReason] = frozenset(
-    {
-        "complete",
-        "error",
-        "aborted",
-        "tool_calls",
-        "stop",
-        "length",
-        "tool_use",
-    }
-)
+STOP_REASONS: frozenset[StopReason] = frozenset({
+    "complete",
+    "error",
+    "aborted",
+    "tool_calls",
+    "stop",
+    "length",
+    "tool_use",
+})
 
 
-class AssistantMessage(_AgentBaseModel):
+class AssistantMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="assistant"):
     """Assistant message from LLM."""
 
-    role: Literal["assistant"] = "assistant"
-    content: list[AssistantContent | None] = Field(default_factory=list)
+    content: list[AssistantContent | None] = []
     stop_reason: StopReason | None = None
     timestamp: int | None = None
     api: str | None = None
     provider: str | None = None
     model: str | None = None
-    usage: JsonObject | None = None
+    usage: dict[str, Any] | None = None
     error_message: str | None = None
 
+    @property
+    def role(self) -> Literal["assistant"]:
+        return "assistant"
 
-class ToolResultMessage(_AgentBaseModel):
+
+class ToolResultMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="tool_result"):
     """Tool result message."""
 
-    role: Literal["tool_result"] = "tool_result"
     tool_call_id: str | None = None
     tool_name: str | None = None
-    content: list[TextContent | ImageContent] = Field(default_factory=list)
-    details: JsonObject = Field(default_factory=dict)
+    content: list[TextContent | ImageContent] = []
+    details: dict[str, Any] = {}
     is_error: bool = False
-    terminate: bool = Field(default=False, exclude=True)
+    terminate: bool = False
     timestamp: int | None = None
+
+    @property
+    def role(self) -> Literal["tool_result"]:
+        return "tool_result"
+
+    def model_dump(self, exclude_none: bool = False) -> dict[str, object]:
+        result = super().model_dump(exclude_none=exclude_none)
+        result.pop("terminate", None)
+        return result
 
 
 Message = Union[UserMessage, AssistantMessage, ToolResultMessage]
 
 
-class CustomAgentMessage(_AgentBaseModel):
+class CustomAgentMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="custom"):
     """Base class for custom agent messages."""
 
-    role: str = ""
     timestamp: int | None = None
+
+    @property
+    def role(self) -> str:
+        return self.__class__.__name__
+
+    @classmethod
+    def model_validate(cls, data: dict[str, object]) -> "AgentMessage":
+        # Dispatch to the right subclass based on role
+        role = data.get("role", "")
+        match role:
+            case "user":
+                return msgspec.convert(data, UserMessage)
+            case "assistant":
+                return msgspec.convert(data, AssistantMessage)
+            case "tool_result":
+                return msgspec.convert(data, ToolResultMessage)
+        return super().model_validate(data)
 
 
 AgentMessage = Union[Message, CustomAgentMessage]
@@ -229,7 +309,7 @@ class AgentToolResult:
     """Result from executing a tool."""
 
     content: list[TextContent | ImageContent] = field(default_factory=list)
-    details: JsonObject = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     terminate: bool = False
 
 
@@ -251,7 +331,7 @@ class Tool:
 
     name: str = ""
     description: str = ""
-    parameters: JsonObject = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -286,7 +366,7 @@ class AgentContext:
 
 
 BeforeToolCallFn: TypeAlias = Callable[
-    [ToolCallContent, AgentTool | None, JsonObject],
+    [ToolCallContent, AgentTool | None, dict[str, Any]],
     MaybeAwaitable[ToolLoopControl | None],
 ]
 AfterToolCallFn: TypeAlias = Callable[
@@ -350,19 +430,17 @@ class AssistantMessageEvent(_AgentBaseModel):
     error: AssistantMessage | str | None = None
 
 
-STREAM_UPDATE_EVENTS: frozenset[str] = frozenset(
-    {
-        "text_start",
-        "text_delta",
-        "text_end",
-        "thinking_start",
-        "thinking_delta",
-        "thinking_end",
-        "tool_call_start",
-        "tool_call_delta",
-        "tool_call_end",
-    }
-)
+STREAM_UPDATE_EVENTS: frozenset[str] = frozenset({
+    "text_start",
+    "text_delta",
+    "text_end",
+    "thinking_start",
+    "thinking_delta",
+    "thinking_end",
+    "tool_call_start",
+    "tool_call_delta",
+    "tool_call_end",
+})
 
 
 class StreamResponse(Protocol):
@@ -427,7 +505,7 @@ class ToolExecutionStartEvent:
     type: Literal["tool_execution_start"] = "tool_execution_start"
     tool_call_id: str = ""
     tool_name: str = ""
-    args: JsonObject | None = None
+    args: dict[str, Any] | None = None
 
 
 @dataclass
@@ -435,7 +513,7 @@ class ToolExecutionUpdateEvent:
     type: Literal["tool_execution_update"] = "tool_execution_update"
     tool_call_id: str = ""
     tool_name: str = ""
-    args: JsonObject | None = None
+    args: dict[str, Any] | None = None
     partial_result: AgentToolResult | None = None
 
 
@@ -527,11 +605,11 @@ class AgentState(_AgentBaseModel):
     system_prompt: str = ""
     model: Model | None = None
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
-    tools: list[AgentTool] = Field(default_factory=list)
-    messages: list[AgentMessage] = Field(default_factory=list)
+    tools: list[AgentTool] = []
+    messages: list[AgentMessage] = []
     is_streaming: bool = False
     stream_message: AgentMessage | None = None
-    pending_tool_calls: set[str] = Field(default_factory=set)
+    pending_tool_calls: set[str] = set()
     error: str | None = None
 
 

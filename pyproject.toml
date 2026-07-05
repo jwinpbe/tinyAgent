@@ -22,7 +22,7 @@ classifiers = [
 ]
 dependencies = [
     "niquests>=3.0.0",
-    "pydantic>=2,<3",
+    "msgspec>=0.18.0",
 ]
 
 [project.optional-dependencies]
@@ -52,19 +52,23 @@ tinyagent = ["py.typed", "_alchemy*.so", "_alchemy*.pyd", "_alchemy*.dylib"]
 
 [tool.ruff]
 line-length = 100
+preview = true
 
 [tool.ruff.lint]
-select = ["E", "F", "C90", "I", "N", "UP", "B", "SIM"]
 ignore = [
     "UP007",   # Allow Union[] for TypeAlias compatibility
     "SIM117",  # Nested with statements can be more readable for async context managers
 ]
+extend-select = ["FURB"]
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 
 [tool.ruff.lint.isort]
 known-first-party = ["tinyagent"]
+
+[tool.pyrefly]
+replace_imports_with_any = ["msgspec"]
 
 [tool.mypy]
 python_version = "3.10"
