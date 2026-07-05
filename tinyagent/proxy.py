@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from typing import Literal, cast
 
-import httpx
+import niquests
 
 from .agent_types import (
     AgentTool,
@@ -115,17 +115,10 @@ def _build_proxy_request_body(
     }
 
 
-def _build_proxy_error_message(response: httpx.Response) -> str:
+def _build_proxy_error_message(response: niquests.AsyncResponse) -> str:
     """Build a deterministic error message for non-200 proxy responses."""
 
     return f"Proxy error: {response.status_code}"
-
-
-def _parse_sse_lines(buffer: str, chunk: str) -> tuple[str, list[str]]:
-    buffer += chunk
-    lines = buffer.split("\n")
-    remaining = lines.pop() if lines else ""
-    return remaining, lines
 
 
 def _parse_sse_data(line: str) -> JsonObject | None:
@@ -144,16 +137,15 @@ def _parse_sse_data(line: str) -> JsonObject | None:
     return cast(JsonObject, parsed) if isinstance(parsed, dict) else None
 
 
-async def _iter_sse_events(response: httpx.Response) -> AsyncIterator[JsonObject]:
-    """Yield parsed SSE events from an httpx streaming response."""
+async def _iter_sse_events(response: niquests.AsyncResponse) -> AsyncIterator[JsonObject]:
+    """Yield parsed SSE events from a niquests streaming response."""
 
-    buffer = ""
-    async for chunk in response.aiter_text():
-        buffer, lines = _parse_sse_lines(buffer, chunk)
-        for line in lines:
-            data = _parse_sse_data(line)
-            if data is not None:
-                yield data
+    if response.encoding is None:
+        response.encoding = "utf-8"
+    async for line in response.iter_lines(decode_unicode=True):
+        data = _parse_sse_data(line)
+        if data is not None:
+            yield data
 
 
 class _QueueDoneSignal:
@@ -211,7 +203,7 @@ class ProxyStreamResponse(StreamResponse):
             self._set_final_from_event(event)
         await self._queue.put(event)
 
-    async def _stream_from_http_response(self, response: httpx.Response) -> None:
+    async def _stream_from_http_response(self, response: niquests.AsyncResponse) -> None:
         async for proxy_event in _iter_sse_events(response):
             if self._is_aborted():
                 raise RuntimeError("Request aborted by user")
@@ -227,9 +219,8 @@ class ProxyStreamResponse(StreamResponse):
 
         request_body = _build_proxy_request_body(self._model, self._context, self._options)
 
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
+        async with niquests.AsyncSession() as session:
+            response = await session.post(
                 f"{self._options.proxy_url}/api/stream",
                 headers={
                     "Authorization": f"Bearer {self._options.auth_token}",
@@ -237,11 +228,12 @@ class ProxyStreamResponse(StreamResponse):
                 },
                 json=request_body,
                 timeout=None,
-            ) as response:
-                if response.status_code != 200:
-                    raise RuntimeError(_build_proxy_error_message(response))
+                stream=True,
+            )
+            if response.status_code != 200:
+                raise RuntimeError(_build_proxy_error_message(response))
 
-                await self._stream_from_http_response(response)
+            await self._stream_from_http_response(response)
 
         if self._final is None:
             self._final = self._partial

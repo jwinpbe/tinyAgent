@@ -159,7 +159,7 @@ This document describes the architecture of TinyAgent: where components live, wh
 - Common optional model metadata fields for OpenAI-compatible and restored Rust binding models
 
 **Proxy Provider**:
-- Uses `httpx` to call a relay service
+- Uses `niquests` to call a relay service
 - Parses proxy SSE into standard `AssistantMessageEvent` objects
 - Keeps core event/message handling unchanged from the local provider flow
 
