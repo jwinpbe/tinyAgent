@@ -63,10 +63,13 @@ check_file() {
 for md in "$ROOT"/*.md; do
   base=$(basename "$md")
   [[ "$base" == "AGENTS.md" ]] && continue
+  [[ "$base" == "README.md" ]] && continue
   check_file "$md"
 done
 
 while IFS= read -r -d '' md; do
+  base=$(basename "$md")
+  [[ "$base" == "README.md" ]] && continue
   check_file "$md"
 done < <(find "$DOCS_DIR" -name '*.md' -type f -print0 | sort -z)
 

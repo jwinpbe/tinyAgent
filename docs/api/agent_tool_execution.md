@@ -4,7 +4,7 @@ when_to_read:
   - When debugging tool-call execution
   - When checking how assistant tool calls are extracted and run
 summary: Reference for TinyAgent's concurrent tool execution helpers and result handling.
-last_updated: "2026-05-25"
+last_updated: "2026-07-05"
 ---
 
 # Agent Tool Execution Module
@@ -153,8 +153,8 @@ Create a `ToolResultMessage` from execution result.
 
 ### ToolExecutionResult
 ```python
-class ToolExecutionResult(BaseModel):
-    tool_results: list[ToolResultMessage] = Field(default_factory=list)
+class ToolExecutionResult(msgspec.Struct, kw_only=True):
+    tool_results: list[ToolResultMessage] = []
     steering_messages: list[AgentMessage] | None = None
     terminate: bool = False
 ```

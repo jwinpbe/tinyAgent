@@ -4,7 +4,7 @@ when_to_read:
   - When changing repository quality gates
   - When checking what blocks a push or release
 summary: Blocking hooks, release checks, and enforced rule entry points for this repository.
-last_updated: "2026-04-04"
+last_updated: "2026-07-05"
 ---
 
 # HARNESS
@@ -30,7 +30,7 @@ last_updated: "2026-04-04"
 
 ## Pre-push
 
-- `markdown-frontmatter-required`: run `uv run --group dev python scripts/check_markdown_frontmatter.py`
+- `markdown-frontmatter-required`: run `bash scripts/check_markdown_frontmatter.sh`
   to require `when_to_read`, `summary`, and `last_updated` frontmatter on repo-root
   Markdown files and every Markdown file under `docs/`, excluding `AGENTS.md`.
 - Install the hook locally with `uv run --group dev python -m pre_commit install --hook-type pre-push`.

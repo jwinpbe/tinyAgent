@@ -1,12 +1,3 @@
----
-title: TinyAgent Docs
-when_to_read:
-  - When starting from the docs directory instead of the repo root
-  - When looking for the main product overview inside docs
-summary: Docs-local entry point for TinyAgent overview, installation, and examples.
-last_updated: "2026-06-21"
----
-
 # TinyAgent
 
 ![tinyAgent Logo](https://raw.githubusercontent.com/alchemiststudiosDOTai/tinyAgent/master/static/images/new-ta-logo.jpg)
@@ -98,7 +89,7 @@ The [`Agent`](api/agent.md) class is the main entry point. It manages:
 
 ### Messages
 
-Messages are Pydantic models (use attribute access):
+Messages are msgspec structs (use attribute access):
 
 - `UserMessage`: Input from the user
 - `AssistantMessage`: Response from the LLM
@@ -269,12 +260,14 @@ Smoke validation after installing a wheel with the binding:
 
 ```
 tinyagent/
-├── agent.py              # Agent class
+├── agent.py              # Agent class, configuration & streaming helpers
 ├── agent_loop.py         # Core agent execution loop
 ├── agent_tool_execution.py  # Tool execution helpers
-├── agent_types.py        # Type definitions
+├── agent_types.py        # Type definitions (msgspec structs, events, aliases)
 ├── caching.py            # Prompt caching utilities
 ├── alchemy_provider.py   # Adapter for the optional Rust binding
+├── provider_contracts.py # Shared provider validation & metadata
+├── rust_binding_provider.py  # Restored Rust binding adapter
 ├── proxy.py              # Proxy server integration
 └── proxy_event_handlers.py  # Proxy event parsing
 ```

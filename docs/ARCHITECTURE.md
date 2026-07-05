@@ -4,7 +4,7 @@ when_to_read:
   - When changing module boundaries
   - When understanding TinyAgent event flow and responsibilities
 summary: Architecture map for TinyAgent modules, event flow, and boundary decisions.
-last_updated: "2026-04-04"
+last_updated: "2026-07-05"
 ---
 
 # Architecture
@@ -15,7 +15,7 @@ This document describes the architecture of TinyAgent: where components live, wh
 
 1. **Streaming-first**: All LLM interactions support streaming; non-streaming is a special case
 2. **Event-driven**: Components communicate through events for loose coupling
-3. **Type safety**: Full type hints with Pydantic models for runtime messages/state and dataclasses for lifecycle events
+3. **Type safety**: Full type hints with msgspec structs for runtime messages/state and dataclasses for lifecycle events
 4. **Boundary preservation**: AgentMessage (internal) vs Message (LLM-boundary) separation
 
 ## Component Overview
@@ -48,7 +48,7 @@ This document describes the architecture of TinyAgent: where components live, wh
 
 ### agent_types.py
 
-**What**: Type definitions based on Pydantic runtime models (messages/state), dataclass lifecycle events, and shared type aliases.
+**What**: Type definitions based on msgspec runtime structs (messages/state), dataclass lifecycle events, and shared type aliases.
 
 **Key Types**:
 - `AgentMessage`: Internal message format (union of Message + custom types)
@@ -60,22 +60,14 @@ This document describes the architecture of TinyAgent: where components live, wh
 
 **Design Decision**: Runtime model objects are normalized through typed models and event contracts at boundaries, avoiding parallel dict/model codepaths.
 
-### agent_options.py
+### agent.py (configuration & streaming helpers)
 
-**What**: Public configuration surface for `Agent`.
+**What**: Public configuration surface and internal streaming helpers for `Agent`.
 
 **Contents**:
 - `AgentOptions`: constructor options for state, streaming, provider lookup, and caching
-- callback type aliases used by the `Agent` setup path
-
-### agent_streaming.py
-
-**What**: Internal streaming runtime helpers used by `Agent`.
-
-**Responsibilities**:
-- Process streamed `AgentEvent` values and apply state updates
-- Convert runtime failures into terminal `AgentEndEvent` objects
-- Derive text deltas for `stream_text()`
+- Callback type aliases (`ConvertToLlmCallback`, `TransformContextCallback`, `ApiKeyResolverCallback`)
+- Streaming runtime helpers: process `AgentEvent` values, apply state updates, convert failures to terminal events, derive text deltas for `stream_text()`
 
 ### agent_loop.py
 
@@ -136,7 +128,7 @@ This document describes the architecture of TinyAgent: where components live, wh
 - `steer()`: Queue a steering message that redirects the next turn
 - `follow_up()`: Queue a message for after current run
 
-**Event Handling**: `Agent` delegates stream-event processing to `agent_streaming.py`, which updates state on events:
+**Event Handling**: `Agent` processes stream events internally, updating state on events:
 - `message_start/update`: Update `stream_message` in state
 - `message_end`: Append message to history
 - `tool_execution_start/end`: Track pending tool calls
@@ -226,7 +218,7 @@ Events flow upward through the system:
 
 ## State Management
 
-`AgentState` is a single source of truth represented as a Pydantic model:
+`AgentState` is a single source of truth represented as a msgspec struct:
 
 ```python
 from tinyagent.agent_types import AgentState
@@ -279,7 +271,7 @@ These checks are not advisory — they are enforced.
 ### Dead Code (vulture)
 
 ```bash
-uv run vulture --min-confidence 80 tinyagent .vulture-whitelist.py
+uv run vulture --min-confidence 80 tinyagent
 ```
 
 ### Duplicate Code (pylint / R0801)

@@ -4,7 +4,7 @@ when_to_read:
   - When preparing a contribution
   - When checking repository expectations before changing code
 summary: Contributor guidance for working within TinyAgent's architecture, docs, and quality gates.
-last_updated: "2026-04-04"
+last_updated: "2026-07-05"
 ---
 
 # Contributing to TinyAgent
@@ -71,6 +71,7 @@ Higher layers may depend on lower layers. The reverse is not allowed.
 - Layer 2: `agent_loop`, `proxy`
 - Layer 1: `agent_tool_execution`, `alchemy_provider`, `rust_binding_provider`,
   `proxy_event_handlers`, `caching`
+- Layer 0.5: `provider_contracts`
 - Layer 0: `agent_types`
 
 `agent_types.py` must remain the leaf module among governed TinyAgent modules.

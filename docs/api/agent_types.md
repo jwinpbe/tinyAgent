@@ -11,7 +11,7 @@ last_updated: "2026-05-25"
 
 Type definitions for the TinyAgent runtime.
 
-Runtime messages and state contracts are Pydantic models (not `TypedDict`), while
+Runtime messages and state contracts are msgspec structs, while
 lifecycle `AgentEvent` variants are dataclasses. Use constructor/accessor style APIs
 instead of dict indexing in migrated paths.
 
@@ -20,11 +20,14 @@ instead of dict indexing in migrated paths.
 ### TextContent
 
 ```python
-class TextContent(BaseModel):
-    type: Literal["text"] = "text"
+class TextContent(_AgentBaseModel, tag="text"):
     text: str | None = None
     text_signature: str | None = None
     cache_control: CacheControl | None = None
+
+    @property
+    def type(self) -> Literal["text"]:
+        return "text"
 ```
 
 Text block in a message.
@@ -32,10 +35,13 @@ Text block in a message.
 ### ImageContent
 
 ```python
-class ImageContent(BaseModel):
-    type: Literal["image"] = "image"
+class ImageContent(_AgentBaseModel, tag="image"):
     url: str | None = None
     mime_type: str | None = None
+
+    @property
+    def type(self) -> Literal["image"]:
+        return "image"
 ```
 
 Image block (for vision-capable providers).
@@ -43,11 +49,14 @@ Image block (for vision-capable providers).
 ### ThinkingContent
 
 ```python
-class ThinkingContent(BaseModel):
-    type: Literal["thinking"] = "thinking"
+class ThinkingContent(_AgentBaseModel, tag="thinking"):
     thinking: str | None = None
     thinking_signature: str | None = None
     cache_control: CacheControl | None = None
+
+    @property
+    def type(self) -> Literal["thinking"]:
+        return "thinking"
 ```
 
 Reasoning/thinking block returned by models with reasoning capability.
@@ -55,12 +64,15 @@ Reasoning/thinking block returned by models with reasoning capability.
 ### ToolCallContent
 
 ```python
-class ToolCallContent(BaseModel):
-    type: Literal["tool_call"] = "tool_call"
+class ToolCallContent(_AgentBaseModel, tag="tool_call"):
     id: str | None = None
     name: str | None = None
-    arguments: JsonObject = Field(default_factory=dict)
+    arguments: dict[str, Any] = {}
     partial_json: str | None = None
+
+    @property
+    def type(self) -> Literal["tool_call"]:
+        return "tool_call"
 ```
 
 ### AssistantContent
@@ -74,7 +86,7 @@ Union of all supported assistant content blocks.
 ### CacheControl
 
 ```python
-class CacheControl(BaseModel):
+class CacheControl(_AgentBaseModel):
     type: str | None = None
 ```
 
@@ -85,10 +97,13 @@ Used for Anthropic-style prompt caching.
 ### UserMessage
 
 ```python
-class UserMessage(BaseModel):
-    role: Literal["user"] = "user"
-    content: list[TextContent | ImageContent] = Field(default_factory=list)
+class UserMessage(_AgentBaseModel):
+    content: list[TextContent | ImageContent] = []
     timestamp: int | None = None
+
+    @property
+    def role(self) -> Literal["user"]:
+        return "user"
 ```
 
 ### AssistantMessage
@@ -98,30 +113,36 @@ StopReason = Literal[
     "complete", "error", "aborted", "tool_calls", "stop", "length", "tool_use"
 ]
 
-class AssistantMessage(BaseModel):
-    role: Literal["assistant"] = "assistant"
-    content: list[AssistantContent | None] = Field(default_factory=list)
+class AssistantMessage(_AgentBaseModel):
+    content: list[AssistantContent | None] = []
     stop_reason: StopReason | None = None
     timestamp: int | None = None
     api: str | None = None
     provider: str | None = None
     model: str | None = None
-    usage: JsonObject | None = None
+    usage: dict[str, Any] | None = None
     error_message: str | None = None
+
+    @property
+    def role(self) -> Literal["assistant"]:
+        return "assistant"
 ```
 
 ### ToolResultMessage
 
 ```python
-class ToolResultMessage(BaseModel):
-    role: Literal["tool_result"] = "tool_result"
+class ToolResultMessage(_AgentBaseModel):
     tool_call_id: str | None = None
     tool_name: str | None = None
-    content: list[TextContent | ImageContent] = Field(default_factory=list)
-    details: JsonObject = Field(default_factory=dict)
+    content: list[TextContent | ImageContent] = []
+    details: dict[str, Any] = {}
     is_error: bool = False
-    terminate: bool = Field(default=False, exclude=True)
+    terminate: bool = False
     timestamp: int | None = None
+
+    @property
+    def role(self) -> Literal["tool_result"]:
+        return "tool_result"
 ```
 
 `terminate` is host-side loop-control metadata. It is intentionally excluded from
@@ -138,9 +159,12 @@ LLM-boundary-compatible messages.
 ### AgentMessage
 
 ```python
-class CustomAgentMessage(BaseModel):
-    role: str = ""
+class CustomAgentMessage(_AgentBaseModel):
     timestamp: int | None = None
+
+    @property
+    def role(self) -> str:
+        return self.__class__.__name__
 
 AgentMessage = Union[Message, CustomAgentMessage]
 ```
@@ -156,7 +180,7 @@ Internal agent messages may include custom roles.
 class Tool:
     name: str = ""
     description: str = ""
-    parameters: JsonObject = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
 ```
 
 ### AgentTool
@@ -174,7 +198,7 @@ class AgentTool(Tool):
 @dataclass
 class AgentToolResult:
     content: list[TextContent | ImageContent] = field(default_factory=list)
-    details: JsonObject = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
     terminate: bool = False
 ```
 
@@ -238,7 +262,7 @@ class ThinkingLevel(str, Enum):
 ### Model
 
 ```python
-class Model(BaseModel):
+class Model(_AgentBaseModel):
     provider: str = ""
     id: str = ""
     api: str = ""
@@ -250,7 +274,7 @@ Base model configuration used by all provider streams.
 ### SimpleStreamOptions
 
 ```python
-class SimpleStreamOptions(BaseModel):
+class SimpleStreamOptions(_AgentBaseModel):
     api_key: str | None = None
     temperature: float | None = None
     max_tokens: int | None = None
@@ -264,7 +288,7 @@ Options passed to provider stream functions.
 ### AssistantMessageEvent
 
 ```python
-class AssistantMessageEvent(BaseModel):
+class AssistantMessageEvent(_AgentBaseModel):
     type: Literal[
         "start",
         "text_start",
@@ -363,14 +387,14 @@ class ToolExecutionStartEvent:
     type: Literal["tool_execution_start"] = "tool_execution_start"
     tool_call_id: str = ""
     tool_name: str = ""
-    args: JsonObject | None = None
+    args: dict[str, Any] | None = None
 
 @dataclass
 class ToolExecutionUpdateEvent:
     type: Literal["tool_execution_update"] = "tool_execution_update"
     tool_call_id: str = ""
     tool_name: str = ""
-    args: JsonObject | None = None
+    args: dict[str, Any] | None = None
     partial_result: AgentToolResult | None = None
 
 @dataclass
@@ -412,7 +436,7 @@ TransformContextFn: TypeAlias = Callable[
 ApiKeyResolver: TypeAlias = Callable[[str], MaybeAwaitable[str | None]]
 AgentMessageProvider: TypeAlias = Callable[[], Awaitable[list[AgentMessage]]]
 BeforeToolCallFn: TypeAlias = Callable[
-    [ToolCallContent, AgentTool | None, JsonObject],
+    [ToolCallContent, AgentTool | None, dict[str, Any]],
     MaybeAwaitable[ToolLoopControl | None],
 ]
 AfterToolCallFn: TypeAlias = Callable[
@@ -443,15 +467,15 @@ class AgentLoopConfig:
 ### AgentState
 
 ```python
-class AgentState(BaseModel):
+class AgentState(_AgentBaseModel):
     system_prompt: str = ""
     model: Model | None = None
     thinking_level: ThinkingLevel = ThinkingLevel.OFF
-    tools: list[AgentTool] = Field(default_factory=list)
-    messages: list[AgentMessage] = Field(default_factory=list)
+    tools: list[AgentTool] = []
+    messages: list[AgentMessage] = []
     is_streaming: bool = False
     stream_message: AgentMessage | None = None
-    pending_tool_calls: set[str] = Field(default_factory=set)
+    pending_tool_calls: set[str] = set()
     error: str | None = None
 ```
 
@@ -495,14 +519,9 @@ model-like payloads and fail fast when a message/event/model object does not fol
 ### JsonValue / JsonObject
 
 ```python
-from typing_extensions import TypeAliasType
-
-JsonPrimitive: TypeAlias = str | int | float | bool | None
-JsonValue = TypeAliasType(
-    "JsonValue",
-    "JsonPrimitive | list[JsonValue] | dict[str, JsonValue]",
-)
-JsonObject: TypeAlias = dict[str, JsonValue]
+JsonPrimitive = str | int | float | bool | None
+JsonValue = JsonPrimitive | list["JsonValue"] | dict[str, "JsonValue"]
+JsonObject = dict[str, Any]
 ```
 
 ### EventStream

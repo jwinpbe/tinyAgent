@@ -4,7 +4,7 @@ when_to_read:
   - When using the high-level Agent API
   - When checking state-management behavior in the public interface
 summary: Reference for the high-level Agent API and its stateful interaction surface.
-last_updated: "2026-05-25"
+last_updated: "2026-07-05"
 ---
 
 # Agent Module
@@ -33,6 +33,12 @@ Set the system prompt sent to the LLM.
 def set_model(self, model: Model) -> None
 ```
 Configure the LLM model to use.
+
+#### set_thinking_level
+```python
+def set_thinking_level(self, level: ThinkingLevel) -> None
+```
+Set reasoning level (OFF, MINIMAL, LOW, MEDIUM, HIGH, XHIGH).
 
 #### set_tools
 ```python
@@ -223,7 +229,14 @@ Current agent state (read-only reference).
 @property
 def session_id(self) -> str | None
 ```
-Session ID used for provider caching.
+Session ID used for provider caching. Read/write.
+
+#### thinking_budgets
+```python
+@property
+def thinking_budgets(self) -> ThinkingBudgets | None
+```
+Thinking budget configuration. Read/write.
 
 ## AgentOptions
 

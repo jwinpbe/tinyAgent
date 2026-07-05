@@ -804,7 +804,7 @@
         <div class="metric-grid">
           <div class="metric">
             <div class="metric-value">15</div>
-            <div class="metric-label">Pydantic models</div>
+            <div class="metric-label">msgspec structs</div>
             <div class="metric-desc">Runtime payloads, messages, model config, stream options, and agent state.</div>
           </div>
           <div class="metric">
@@ -928,7 +928,7 @@ flowchart TD
         <div class="ve-card ve-card--hero ve-card--blue">
           <div class="label">Key takeaway</div>
           <p class="summary">
-            <strong>Pydantic models carry the actual conversation payloads.</strong> The unions like <code>Message</code>,
+            <strong>msgspec structs carry the actual conversation payloads.</strong> The unions like <code>Message</code>,
             <code>AgentMessage</code>, and <code>AssistantContent</code> are the connective tissue that makes those payloads
             composable without dropping type specificity.
           </p>
@@ -985,7 +985,7 @@ flowchart TD
             <div class="mini-title">ToolCallContent</div>
             <ul class="node-list">
               <li><code>id</code> + <code>name</code></li>
-              <li><code>arguments: JsonObject</code></li>
+              <li><code>arguments: dict[str, Any]</code></li>
               <li><code>partial_json</code> for streaming</li>
             </ul>
           </div>
@@ -1161,7 +1161,7 @@ AgentMessage = Union[Message, CustomAgentMessage]</pre>
           </tr>
           <tr>
             <td><code>AgentState</code></td>
-            <td><span class="badge badge--blue">pydantic</span></td>
+            <td><span class="badge badge--blue">msgspec</span></td>
             <td>Stores the live conversation state that the high-level <code>Agent</code> mutates over time.</td>
           </tr>
         </tbody>
@@ -1172,7 +1172,7 @@ AgentMessage = Union[Message, CustomAgentMessage]</pre>
       <div class="sec-kicker">Section 4</div>
       <h2 class="sec-title">Event taxonomy</h2>
       <p class="sec-desc">
-        <code>AgentEvent</code> is a dataclass union, not a Pydantic payload model. It describes lifecycle structure around the run:
+        <code>AgentEvent</code> is a dataclass union, not a msgspec payload struct. It describes lifecycle structure around the run:
         overall agent lifetime, turn boundaries, message streaming, and tool execution.
       </p>
     </div>
@@ -1260,7 +1260,7 @@ assert is_tool_execution_event(event) is expected.tool_event</pre>
       <div class="sec-kicker">Section 5</div>
       <h2 class="sec-title">Mental model</h2>
       <p class="sec-desc">
-        If you only remember one map, remember this one: Pydantic models are the data, dataclasses are the lifecycle,
+        If you only remember one map, remember this one: msgspec structs are the data, dataclasses are the lifecycle,
         and aliases/protocols are the glue that keep the runtime composable.
       </p>
     </div>
