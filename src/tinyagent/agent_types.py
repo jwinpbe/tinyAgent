@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
+from msgspec import field
 from enum import Enum
 from typing import Any, Literal, Protocol, TypeAlias, TypeGuard, TypeVar, Union, runtime_checkable
 
@@ -304,17 +304,15 @@ AgentMessageProvider: TypeAlias = Callable[[], Awaitable[list[AgentMessage]]]
 # ------------------------------
 
 
-@dataclass
-class AgentToolResult:
+class AgentToolResult(_AgentBaseModel):
     """Result from executing a tool."""
 
-    content: list[TextContent | ImageContent] = field(default_factory=list)
-    details: dict[str, Any] = field(default_factory=dict)
+    content: list[TextContent | ImageContent] = []
+    details: dict[str, Any] = {}
     terminate: bool = False
 
 
-@dataclass
-class ToolLoopControl:
+class ToolLoopControl(_AgentBaseModel):
     """Host decision used by tool-loop control hooks."""
 
     terminate: bool = False
@@ -325,16 +323,14 @@ class ToolLoopControl:
 AgentToolUpdateCallback = Callable[[AgentToolResult], None]
 
 
-@dataclass
-class Tool:
+class Tool(_AgentBaseModel):
     """Tool definition."""
 
     name: str = ""
     description: str = ""
-    parameters: dict[str, Any] = field(default_factory=dict)
+    parameters: dict[str, Any] = {}
 
 
-@dataclass
 class AgentTool(Tool):
     """Agent tool with execute function."""
 
@@ -347,21 +343,19 @@ class AgentTool(Tool):
 # ------------------------------
 
 
-@dataclass
-class Context:
+class Context(_AgentBaseModel):
     """Context for LLM calls."""
 
     system_prompt: str = ""
-    messages: list[Message] = field(default_factory=list)
+    messages: list[Message] = []
     tools: list[AgentTool] | None = None
 
 
-@dataclass
-class AgentContext:
+class AgentContext(_AgentBaseModel):
     """Agent context with AgentMessage types."""
 
     system_prompt: str = ""
-    messages: list[AgentMessage] = field(default_factory=list)
+    messages: list[AgentMessage] = []
     tools: list[AgentTool] | None = None
 
 
@@ -458,58 +452,49 @@ class StreamResponse(Protocol):
 # ------------------------------
 
 
-@dataclass
-class AgentStartEvent:
+class AgentStartEvent(_AgentBaseModel):
     type: Literal["agent_start"] = "agent_start"
 
 
-@dataclass
-class AgentEndEvent:
+class AgentEndEvent(_AgentBaseModel):
     type: Literal["agent_end"] = "agent_end"
-    messages: list[AgentMessage] = field(default_factory=list)
+    messages: list[AgentMessage] = []
 
 
-@dataclass
-class TurnStartEvent:
+class TurnStartEvent(_AgentBaseModel):
     type: Literal["turn_start"] = "turn_start"
 
 
-@dataclass
-class TurnEndEvent:
+class TurnEndEvent(_AgentBaseModel):
     type: Literal["turn_end"] = "turn_end"
     message: AgentMessage | None = None
-    tool_results: list[ToolResultMessage] = field(default_factory=list)
+    tool_results: list[ToolResultMessage] = []
 
 
-@dataclass
-class MessageStartEvent:
+class MessageStartEvent(_AgentBaseModel):
     type: Literal["message_start"] = "message_start"
     message: AgentMessage | None = None
 
 
-@dataclass
-class MessageUpdateEvent:
+class MessageUpdateEvent(_AgentBaseModel):
     type: Literal["message_update"] = "message_update"
     message: AgentMessage | None = None
     assistant_message_event: AssistantMessageEvent | None = None
 
 
-@dataclass
-class MessageEndEvent:
+class MessageEndEvent(_AgentBaseModel):
     type: Literal["message_end"] = "message_end"
     message: AgentMessage | None = None
 
 
-@dataclass
-class ToolExecutionStartEvent:
+class ToolExecutionStartEvent(_AgentBaseModel):
     type: Literal["tool_execution_start"] = "tool_execution_start"
     tool_call_id: str = ""
     tool_name: str = ""
     args: dict[str, Any] | None = None
 
 
-@dataclass
-class ToolExecutionUpdateEvent:
+class ToolExecutionUpdateEvent(_AgentBaseModel):
     type: Literal["tool_execution_update"] = "tool_execution_update"
     tool_call_id: str = ""
     tool_name: str = ""
@@ -517,13 +502,13 @@ class ToolExecutionUpdateEvent:
     partial_result: AgentToolResult | None = None
 
 
-@dataclass
-class ToolExecutionEndEvent:
+class ToolExecutionEndEvent(_AgentBaseModel):
     type: Literal["tool_execution_end"] = "tool_execution_end"
     tool_call_id: str = ""
     tool_name: str = ""
     result: AgentToolResult | None = None
     is_error: bool = False
+    args: dict[str, Any] | None = None
 
 
 AgentEvent = Union[
@@ -581,8 +566,7 @@ def is_tool_execution_event(event: AgentEvent) -> TypeGuard[ToolExecutionEvent]:
     )
 
 
-@dataclass
-class AgentLoopConfig:
+class AgentLoopConfig(_AgentBaseModel):
     """Configuration for the agent loop."""
 
     model: Model
@@ -613,8 +597,7 @@ class AgentState(_AgentBaseModel):
     error: str | None = None
 
 
-@dataclass(frozen=True)
-class _WakeupSignal:
+class _WakeupSignal(msgspec.Struct, frozen=True):
     """Internal queue marker used to wake blocked stream consumers."""
 
 

@@ -163,3 +163,56 @@ async def test_event_stream_result_from_agent_end_event() -> None:
     stream.push(AgentEndEvent(messages=expected_messages))
 
     assert await stream.result() == expected_messages
+
+
+def test_tool_execution_end_event_has_args() -> None:
+    """Verify args field is stored on ToolExecutionEndEvent (Issue #43)."""
+    event = ToolExecutionEndEvent(
+        tool_call_id="tc_1",
+        tool_name="echo",
+        args={"key": "value"},
+    )
+    assert event.args == {"key": "value"}
+
+
+def test_tool_execution_end_event_args_defaults_to_none() -> None:
+    """Verify args defaults to None when not provided."""
+    event = ToolExecutionEndEvent(tool_call_id="tc_1", tool_name="echo")
+    assert event.args is None
+
+
+def test_tool_execution_end_event_model_dump() -> None:
+    """Verify model_dump includes all fields on ToolExecutionEndEvent."""
+    event = ToolExecutionEndEvent(
+        tool_call_id="tc_1",
+        tool_name="echo",
+        result=None,
+        is_error=False,
+        args={"key": "value"},
+    )
+    dumped = event.model_dump()
+    assert dumped["type"] == "tool_execution_end"
+    assert dumped["tool_call_id"] == "tc_1"
+    assert dumped["tool_name"] == "echo"
+    assert dumped["args"] == {"key": "value"}
+
+
+def test_tool_execution_end_event_equality() -> None:
+    """Verify __eq__ works for ToolExecutionEndEvent."""
+    event1 = ToolExecutionEndEvent(
+        tool_call_id="tc_1",
+        tool_name="echo",
+        args={"key": "value"},
+    )
+    event2 = ToolExecutionEndEvent(
+        tool_call_id="tc_1",
+        tool_name="echo",
+        args={"key": "value"},
+    )
+    event3 = ToolExecutionEndEvent(
+        tool_call_id="tc_2",
+        tool_name="echo",
+        args={"key": "value"},
+    )
+    assert event1 == event2
+    assert event1 != event3
