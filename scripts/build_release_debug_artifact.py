@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WATCHED_DIRECTORIES = (
     ("dist", "dist"),
     ("wheelhouse", "wheelhouse"),
-    ("tinyagent", "tinyagent"),
+    ("src/tinyagent", "tinyagent"),
     (".artifact/raw-wheel", "raw_wheel"),
     (".external/tinyagent-alchemy/target/wheels", "external_binding_wheels"),
 )
@@ -99,8 +99,7 @@ def build_debug_artifact(*, root: Path = ROOT, output_dir: Path) -> None:
         dist_wheel_note = "no wheel files found"
 
     binding_errors = check_release_binding(
-        pyproject_path=root / "pyproject.toml",
-        package_dir=root / "tinyagent",
+        package_dir=root / "src" / "tinyagent",
         require_present=False,
     )
 

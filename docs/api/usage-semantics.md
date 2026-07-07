@@ -7,8 +7,8 @@ when_to_read:
 last_updated: "2026-04-04"
 ontological_relations:
   - extends: providers.md
-  - implemented_by: ../../tinyagent/alchemy_provider.py
-  - enforced_by: ../../tinyagent/alchemy_provider.py
+  - implemented_by: ../../src/tinyagent/alchemy_provider.py
+  - enforced_by: ../../src/tinyagent/alchemy_provider.py
   - validated_by: ../../tests/test_caching.py
   - validated_by: ../../tests/test_usage_contracts.py
 ---

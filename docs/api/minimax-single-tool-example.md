@@ -28,7 +28,7 @@ It shows one tool:
 
 - `tinyagent._alchemy` available in this repo, either by:
   - using a wheel that already includes the extension, or
-  - building the in-repo `rust/` crate and staging the artifact into `tinyagent/`
+  - building the in-repo `rust/` crate and staging the artifact into `src/tinyagent/`
 - `MINIMAX_API_KEY` set in `.env`
 
 Example `.env`:

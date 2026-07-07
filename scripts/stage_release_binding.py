@@ -10,7 +10,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parent.parent
-PACKAGE_DIR = ROOT / "tinyagent"
+PACKAGE_DIR = ROOT / "src" / "tinyagent"
 EXPECTED_PATTERNS = ("_alchemy*.so", "_alchemy*.pyd", "_alchemy*.dylib")
 
 

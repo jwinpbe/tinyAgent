@@ -17,7 +17,7 @@ built.
 
 Ship the alchemy-backed runtime path in published wheels by building the Rust
 binding from the in-repo `rust/` crate in CI, staging the resulting
-`tinyagent._alchemy` extension into `tinyagent/`, and packaging that binary into
+`tinyagent._alchemy` extension into `src/tinyagent/`, and packaging that binary into
 platform wheels.
 
 ## What changed
@@ -31,7 +31,7 @@ platform wheels.
     - `_alchemy*.dylib`
 - `setup.py`
   - adds a custom setuptools `Distribution`
-  - when a staged `_alchemy` binary exists in `tinyagent/`, wheel builds are
+  - when a staged `_alchemy` binary exists in `src/tinyagent/`, wheel builds are
     marked as platform-specific instead of pure-Python
 
 ### Release enforcement
@@ -70,23 +70,23 @@ platform wheels.
 
 ### 1. Build the binding from this repo
 
-Build the Rust binding from `rust/` and stage it into `tinyagent/`. Expected
+Build the Rust binding from `rust/` and stage it into `src/tinyagent/`. Expected
 staged filenames include one of:
 
-- `tinyagent/_alchemy.abi3.so`
-- `tinyagent/_alchemy.<platform>.so`
-- `tinyagent/_alchemy.pyd`
-- `tinyagent/_alchemy.dylib`
+- `src/tinyagent/_alchemy.abi3.so`
+- `src/tinyagent/_alchemy.<platform>.so`
+- `src/tinyagent/_alchemy.pyd`
+- `src/tinyagent/_alchemy.dylib`
 
 Platform examples:
 
-- Linux: `cp rust/target/release/lib_alchemy.so tinyagent/_alchemy.abi3.so`
-- macOS: `cp rust/target/release/lib_alchemy.dylib tinyagent/_alchemy.abi3.so`
-- Windows: copy the built `*alchemy*.dll` to `tinyagent/_alchemy.pyd`
+- Linux: `cp rust/target/release/lib_alchemy.so src/tinyagent/_alchemy.abi3.so`
+- macOS: `cp rust/target/release/lib_alchemy.dylib src/tinyagent/_alchemy.abi3.so`
+- Windows: copy the built `*alchemy*.dll` to `src/tinyagent/_alchemy.pyd`
 
 ### 2. Stage the artifact into this repo
 
-The staged `_alchemy` binary must exist in `tinyagent/` before packaging so
+The staged `_alchemy` binary must exist in `src/tinyagent/` before packaging so
 setuptools includes it as package data.
 
 ### 3. Run the release check
@@ -141,11 +141,11 @@ Example repaired Linux wheel output from this task:
 
 Confirm the built wheel contains the binding artifact:
 
-- `tinyagent/_alchemy.abi3.so`
+- `src/tinyagent/_alchemy.abi3.so`
 
 The wheel build output from this task showed:
 
-- `adding 'tinyagent/_alchemy.abi3.so'`
+- `adding 'src/tinyagent/_alchemy.abi3.so'`
 
 ## 7. Publish the wheel
 
@@ -160,7 +160,7 @@ On GitHub release publish or manual dispatch, it:
 - checks out this repo
 - builds the in-repo binding on `ubuntu-latest` (manylinux), `macos-latest`, and `windows-latest`
 - uses Python 3.10 once per platform so the `cp310-abi3` wheel filename is unique and stable
-- stages the binding into `tinyagent/`
+- stages the binding into `src/tinyagent/`
 - runs `python3 scripts/check_release_binding.py --require-present`
 - builds the `tiny-agent-os` wheel
 - repairs Linux wheels with `auditwheel repair`
@@ -238,9 +238,9 @@ This keeps the release contract simple:
 The release contract is now:
 
 1. build `_alchemy` from the in-repo `rust/` crate
-2. copy it into `tinyagent/`
+2. copy it into `src/tinyagent/`
 3. run `python3 scripts/check_release_binding.py --require-present`
 4. build the wheel with `uv build --wheel`
 5. on Linux, repair the wheel with `auditwheel` and run `python3 scripts/check_release_wheels.py dist`
-6. verify the wheel contains `tinyagent/_alchemy...`
+6. verify the wheel contains `src/tinyagent/_alchemy...`
 7. publish

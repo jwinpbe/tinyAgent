@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Check the release contract for shipping the optional alchemy binding.
 
-This repo does not own the Rust binding source, but release wheels can still ship
-prebuilt `_alchemy` artifacts when those binaries are staged into `tinyagent/`
-before packaging.
+This repo uses hatchling build backend. When a pre-built `_alchemy` binary is
+staged into the package directory, hatchling auto-includes it in the wheel and
+the custom build hook tags the wheel as platform-specific.
 """
 
 from __future__ import annotations
@@ -12,25 +12,9 @@ import argparse
 import sys
 from pathlib import Path
 
-try:
-    import tomllib
-except ImportError:  # pragma: no cover
-    import tomli as tomllib
-
 ROOT = Path(__file__).resolve().parent.parent
-PYPROJECT = ROOT / "pyproject.toml"
-PACKAGE_DIR = ROOT / "tinyagent"
+PACKAGE_DIR = ROOT / "src" / "tinyagent"
 EXPECTED_PATTERNS = frozenset({"_alchemy*.so", "_alchemy*.pyd", "_alchemy*.dylib"})
-
-
-def _load_tinyagent_package_data(pyproject_path: Path = PYPROJECT) -> set[str]:
-    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    tinyagent_data = (
-        data.get("tool", {}).get("setuptools", {}).get("package-data", {}).get("tinyagent", [])
-    )
-    if not isinstance(tinyagent_data, list):
-        return set()
-    return {str(value) for value in tinyagent_data}
 
 
 def _find_staged_binding_files(package_dir: Path = PACKAGE_DIR) -> list[Path]:
@@ -70,26 +54,16 @@ def _expected_binary_format() -> str | None:
 
 def check(
     *,
-    pyproject_path: Path = PYPROJECT,
     package_dir: Path = PACKAGE_DIR,
     require_present: bool = False,
 ) -> list[str]:
-    package_data = _load_tinyagent_package_data(pyproject_path)
     errors: list[str] = []
-
-    missing_patterns = sorted(EXPECTED_PATTERNS - package_data)
-    if missing_patterns:
-        errors.append(
-            "pyproject.toml missing tinyagent package-data pattern(s): "
-            + ", ".join(missing_patterns)
-        )
-
     staged_files = _find_staged_binding_files(package_dir)
     if require_present and not staged_files:
         errors.append(
-            "No staged `_alchemy` binary found in tinyagent/. "
+            "No staged `_alchemy` binary found in src/tinyagent/. "
             "Build the binding from the external tinyagent-alchemy repo and copy "
-            "the resulting artifact into tinyagent/ before building release wheels."
+            "the resulting artifact into src/tinyagent/ before building release wheels."
         )
 
     expected_format = _expected_binary_format()
@@ -112,7 +86,7 @@ def main() -> int:
     parser.add_argument(
         "--require-present",
         action="store_true",
-        help="Fail unless a staged `_alchemy` binary is present in tinyagent/.",
+        help="Fail unless a staged `_alchemy` binary is present in src/tinyagent/.",
     )
     args = parser.parse_args()
 
@@ -122,7 +96,7 @@ def main() -> int:
             print(f"release-binding-check: {error}")
         return 1
 
-    print("release-binding-check: tinyagent package-data is configured for `_alchemy`")
+    print("release-binding-check: hatchling will include `_alchemy` if present")
     staged_files = _find_staged_binding_files()
     if staged_files:
         print("release-binding-check: staged binding artifacts:")

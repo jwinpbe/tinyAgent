@@ -51,7 +51,7 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        args: ["--min-confidence", "80", "tinyagent"]
+        args: ["--min-confidence", "80", "src/tinyagent"]
 
       - id: duplicate-code
         name: pylint (duplicate code detection)
@@ -59,7 +59,7 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
-        args: ["--disable=all", "--enable=duplicate-code", "tinyagent"]
+        args: ["--disable=all", "--enable=duplicate-code", "src/tinyagent"]
 
       - id: debtlint
         name: debtlint (technical debt tracking)
@@ -79,7 +79,7 @@ repos:
         name: tinyagent-file-length (700-line ceiling)
         entry: python3 scripts/lint_file_length.py --max-lines 700
         language: system
-        files: ^tinyagent/.*\.py$
+        files: ^src/tinyagent/.*\.py$
 
       - id: markdown-frontmatter-required
         name: markdown-frontmatter-required (repo-root/docs frontmatter)

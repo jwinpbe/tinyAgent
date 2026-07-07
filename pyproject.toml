@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
 
 [project]
 name = "tiny-agent-os"
@@ -44,11 +44,24 @@ dev = [
     "pylint>=3.0.0",
 ]
 
-[tool.setuptools.packages.find]
-include = ["tinyagent*"]
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src/**",
+    "/rust/**",
+    "/scripts/**",
+    "/tests/**",
+    "/docs/**",
+    "/examples/**",
+    "/pyproject.toml",
+    "/README.md",
+    "/LICENSE",
+]
 
-[tool.setuptools.package-data]
-tinyagent = ["py.typed", "_alchemy*.so", "_alchemy*.pyd", "_alchemy*.dylib"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/tinyagent"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
 
 [tool.ruff]
 line-length = 100
@@ -81,6 +94,7 @@ check_untyped_defs = true
 files = ["."]
 exclude = '(^|/)(\.venv|scripts/)'
 explicit_package_bases = true
+mypy_path = ["src"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -90,7 +104,7 @@ testpaths = ["tests"]
 max-file-lines = 500
 
 [tool.archlint]
-library_root = "tinyagent"
+library_root = "src/tinyagent"
 core_modules = [
     "agent",
     "agent_loop",

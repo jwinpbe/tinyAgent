@@ -42,9 +42,9 @@ jobs:
 
               export OPENSSL_NO_VENDOR=1
               cargo build --release --manifest-path rust/Cargo.toml
-              cp rust/target/release/lib_alchemy.so tinyagent/_alchemy.abi3.so
+              cp rust/target/release/lib_alchemy.so src/tinyagent/_alchemy.abi3.so
 
-              "${PYBIN}/python" -c "import sys; sys.path.insert(0, \"tinyagent\"); import _alchemy"
+              "${PYBIN}/python" -c "import sys; sys.path.insert(0, \"src/tinyagent\"); import _alchemy"
               "${PYBIN}/python" scripts/check_release_binding.py --require-present
 
               mkdir -p dist wheelhouse
@@ -90,15 +90,15 @@ jobs:
           export RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup"
           cargo build --release --manifest-path rust/Cargo.toml
           if [ -f rust/target/release/lib_alchemy.dylib ]; then
-            cp rust/target/release/lib_alchemy.dylib tinyagent/_alchemy.abi3.so
+            cp rust/target/release/lib_alchemy.dylib src/tinyagent/_alchemy.abi3.so
           elif [ -f rust/target/release/lib_alchemy.so ]; then
-            cp rust/target/release/lib_alchemy.so tinyagent/_alchemy.abi3.so
+            cp rust/target/release/lib_alchemy.so src/tinyagent/_alchemy.abi3.so
           else
             echo "binding artifact not found in rust/target/release"
             ls -la rust/target/release
             exit 1
           fi
-          python -c "import sys; sys.path.insert(0,'tinyagent'); import _alchemy"
+          python -c "import sys; sys.path.insert(0,'src/tinyagent'); import _alchemy"
           python scripts/check_release_binding.py --require-present
 
       - name: Build the wheel
@@ -150,8 +150,8 @@ jobs:
           $dll = Get-ChildItem -Path "rust/target/release" -Filter "*alchemy*.dll" | Select-Object -First 1
           if (-not $dll) { throw "binding DLL not found in rust/target/release" }
 
-          Copy-Item $dll.FullName "tinyagent/_alchemy.pyd" -Force
-          python -c "import sys; sys.path.insert(0,'tinyagent'); import _alchemy"
+          Copy-Item $dll.FullName "src/tinyagent/_alchemy.pyd" -Force
+          python -c "import sys; sys.path.insert(0,'src/tinyagent'); import _alchemy"
           python scripts/check_release_binding.py --require-present
 
       - name: Build the wheel

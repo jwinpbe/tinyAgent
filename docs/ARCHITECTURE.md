@@ -271,13 +271,13 @@ These checks are not advisory — they are enforced.
 ### Dead Code (vulture)
 
 ```bash
-uv run vulture --min-confidence 80 tinyagent
+uv run vulture --min-confidence 80 src/tinyagent
 ```
 
 ### Duplicate Code (pylint / R0801)
 
 ```bash
-uv run pylint --disable=all --enable=duplicate-code tinyagent
+uv run pylint --disable=all --enable=duplicate-code src/tinyagent
 ```
 
 ## Technical Debt

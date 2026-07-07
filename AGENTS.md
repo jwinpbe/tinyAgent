@@ -10,7 +10,7 @@ we are in the middle of bringing the rust binding back into this repo because th
 - `tests/architecture/test_import_boundaries.py` — enforced layer contract for the Python package.
 
 ## Repository Map
-- `tinyagent/` — published Python package.
+- `src/tinyagent/` — published Python package.
   - `__init__.py` — public exports.
   - `agent.py` — high-level `Agent` API and state management.
   - `agent_loop.py` — orchestration loop.
@@ -33,8 +33,8 @@ we are in the middle of bringing the rust binding back into this repo because th
 - `uv run mypy --ignore-missing-imports --exclude "lint_file_length\\.py$" .`
 - `python3 scripts/lint_architecture.py`
 - `.venv/bin/python -m pytest tests/architecture/test_import_boundaries.py -x -q`
-- `uv run vulture --min-confidence 80 tinyagent`
-- `uv run pylint --disable=all --enable=duplicate-code tinyagent`
+- `uv run vulture --min-confidence 80 src/tinyagent`
+- `uv run pylint --disable=all --enable=duplicate-code src/tinyagent`
 - `python3 scripts/lint_debt.py`
 - `python3 scripts/check_release_binding.py`
 - `python3 scripts/check_release_binding.py --require-present` — run before building/publishing wheels that are expected to ship `_alchemy`
@@ -51,7 +51,7 @@ we are in the middle of bringing the rust binding back into this repo because th
 - `agent_types.py` must remain the leaf module among governed TinyAgent modules.
 - Rust binding implementation work is allowed in this repo as part of the migration back from the external split.
 - Keep Rust binding changes isolated from the core Python layer boundaries unless a cross-layer change is required.
-- `tinyagent/__init__.py` is the public package surface; keep exports aligned with `scripts/lint_architecture.py` constraints.
+- `src/tinyagent/__init__.py` is the public package surface; keep exports aligned with `scripts/lint_architecture.py` constraints.
 
 ## Sources Of Truth
 - Product overview and examples: `README.md`
@@ -67,7 +67,7 @@ we are in the middle of bringing the rust binding back into this repo because th
 - Do not file binding/runtime issues against `tunahorse/tinyagent-alchemy`; use `alchemiststudiosDOTai/alchemy-rs` if an external alchemy issue is needed during migration
 
 ## Change Guardrails
-- Do not add `.env` loading or `dotenv` imports inside `tinyagent/`.
+- Do not add `.env` loading or `dotenv` imports inside `src/tinyagent/`.
 - Provider modules must not mutate `os.environ`.
 - No free-form `TODO`/`FIXME`/`HACK`/`XXX`/`DEBT` markers; use the ticketed format documented in `docs/ARCHITECTURE.md` and enforced by `scripts/lint_debt.py`.
 - Keep docs in this repo aligned with the Python package and the in-repo Rust binding migration status.

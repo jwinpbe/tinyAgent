@@ -21,7 +21,7 @@ ARCH004  No NIH (not-invented-here) utility modules.
 Configuration lives in pyproject.toml under [tool.archlint]:
 
     [tool.archlint]
-    library_root = "tinyagent"
+    library_root = "src/tinyagent"
     core_modules = [
         "agent", "agent_loop", "agent_tool_execution", "agent_types",
         "openrouter_provider", "proxy", "proxy_event_handlers",
@@ -45,7 +45,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 
 _DEFAULTS = {
-    "library_root": "tinyagent",
+    "library_root": "src/tinyagent",
     "core_modules": [
         "agent",
         "agent_loop",

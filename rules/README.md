@@ -30,8 +30,8 @@ Rule script:
 
 Purpose:
 
-- reject `__pycache__` directories under `tinyagent/`
-- reject empty/cache-only directories under `tinyagent/`
+- reject `__pycache__` directories under `src/tinyagent/`
+- reject empty/cache-only directories under `src/tinyagent/`
 
 Run:
 

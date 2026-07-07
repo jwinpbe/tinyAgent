@@ -12,9 +12,9 @@ depth: 2
 seams: [D]
 ontological_relations:
   - relates_to: "[[usage-contract]]"
-  - affects: "[[tinyagent/alchemy_provider.py]]"
+  - affects: "[[src/tinyagent/alchemy_provider.py]]"
   - historical_note: "`openrouter_provider.py` path was removed during hard cutover"
-  - affects: "[[tinyagent/alchemy_provider.py]]"
+  - affects: "[[src/tinyagent/alchemy_provider.py]]"
   - historical_affects: "in-repo `src/lib.rs` binding before extraction to the external binding repo"
   - affects: "[[alchemy-rs/src/providers/openai_completions.rs]]"
 tags:

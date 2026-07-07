@@ -22,11 +22,11 @@ last_updated: "2026-07-05"
 - `archlint`: run `python3 scripts/lint_architecture.py` to enforce architecture rules.
 - `layer-lock`: run the import-boundary test at `tests/architecture/test_import_boundaries.py`.
 - `mypy`: run static type checking with the repo's configured arguments.
-- `vulture`: detect likely dead code in `tinyagent/`.
-- `duplicate-code`: run pylint's duplicate-code detector on `tinyagent/`.
+- `vulture`: detect likely dead code in `src/tinyagent/`.
+- `duplicate-code`: run pylint's duplicate-code detector on `src/tinyagent/`.
 - `debtlint`: enforce ticketed technical-debt markers.
 - `treelint`: enforce TinyAgent tree hygiene rules.
-- `tinyagent-file-length`: block staged Python files under `tinyagent/` that exceed 700 lines.
+- `tinyagent-file-length`: block staged Python files under `src/tinyagent/` that exceed 700 lines.
 
 ## Pre-push
 
@@ -39,12 +39,12 @@ last_updated: "2026-07-05"
 ## Release
 
 - `release-binding-check`: run `python3 scripts/check_release_binding.py --require-present` before building/publishing wheels that are expected to ship `_alchemy`.
-- Build the binding from the in-repo crate at `rust/`, then stage the resulting `_alchemy` binary into `tinyagent/` before packaging.
+- Build the binding from the in-repo crate at `rust/`, then stage the resulting `_alchemy` binary into `src/tinyagent/` before packaging.
 - `release-wheel-check`: run `python3 scripts/check_release_wheels.py dist` before publishing.
   Linux wheels must not keep a generic `linux_*` tag; repair them with `auditwheel`
   until the wheel metadata reports `manylinux_*` or `musllinux_*` instead.
 - `.github/workflows/publish-pypi.yml` is the release path for Linux, macOS, and Windows wheels:
-  it builds the in-repo binding per-platform, stages it into `tinyagent/`, runs the release checks,
+  it builds the in-repo binding per-platform, stages it into `src/tinyagent/`, runs the release checks,
   repairs Linux wheels with `auditwheel` so PyPI receives a `manylinux` artifact,
   and publishes the release artifacts to PyPI via the repo `PYPI_TOKEN` secret.
 

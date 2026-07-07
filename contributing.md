@@ -41,7 +41,7 @@ Python 3.10+ is required.
 
 ## Repo Map
 
-- `tinyagent/`: published Python package
+- `src/tinyagent/`: published Python package
 - `rust/`: in-repo crate that builds the optional `tinyagent._alchemy` binding
 - `tests/`: unit, contract, release, and architecture tests
 - `docs/`: architecture, API reference, release notes, and harness docs
@@ -51,14 +51,14 @@ Python 3.10+ is required.
 
 Key package modules:
 
-- `tinyagent/agent.py`: high-level `Agent` API and state handling
-- `tinyagent/agent_loop.py`: orchestration loop
-- `tinyagent/agent_tool_execution.py`: concurrent tool execution
-- `tinyagent/agent_types.py`: shared runtime models and event types
-- `tinyagent/alchemy_provider.py`: adapter for the optional `_alchemy` binding
-- `tinyagent/rust_binding_provider.py`: Rust binding provider integration
-- `tinyagent/proxy.py` and `tinyagent/proxy_event_handlers.py`: proxy streaming path
-- `tinyagent/caching.py`: prompt caching helpers
+- `src/tinyagent/agent.py`: high-level `Agent` API and state handling
+- `src/tinyagent/agent_loop.py`: orchestration loop
+- `src/tinyagent/agent_tool_execution.py`: concurrent tool execution
+- `src/tinyagent/agent_types.py`: shared runtime models and event types
+- `src/tinyagent/alchemy_provider.py`: adapter for the optional `_alchemy` binding
+- `src/tinyagent/rust_binding_provider.py`: Rust binding provider integration
+- `src/tinyagent/proxy.py` and `src/tinyagent/proxy_event_handlers.py`: proxy streaming path
+- `src/tinyagent/caching.py`: prompt caching helpers
 
 ## Design Rules
 
@@ -81,7 +81,7 @@ same change.
 
 ### Keep the public surface intentional
 
-`tinyagent/__init__.py` is the package surface. Keep exports aligned with the
+`src/tinyagent/__init__.py` is the package surface. Keep exports aligned with the
 architecture linter and avoid expanding the root namespace casually.
 
 Optional provider modules should be imported directly by callers when that is
@@ -103,7 +103,7 @@ special cases or implicit behavior.
 
 The architecture linter blocks these patterns in library code:
 
-- no `.env` loading or `dotenv` imports inside `tinyagent/`
+- no `.env` loading or `dotenv` imports inside `src/tinyagent/`
 - no mutation of `os.environ` inside provider modules
 
 Library code consumes configuration; it does not own process environment setup.
@@ -146,7 +146,7 @@ Update code, tests, and docs together when behavior changes.
 - Architecture or policy changes: update `docs/ARCHITECTURE.md`
 - Release or wheel changes: update `docs/releasing-alchemy-binding.md`
 - Harness changes: update `docs/harness/` and rerun the harness-specific rules
-- Package surface changes: verify `tinyagent/__init__.py` still matches the
+- Package surface changes: verify `src/tinyagent/__init__.py` still matches the
   intended public API and linter constraints
 
 Do not leave docs trailing behind code changes in this repo.
@@ -160,8 +160,8 @@ uv run pytest
 uv run mypy --ignore-missing-imports --exclude "lint_file_length\\.py$" .
 python3 scripts/lint_architecture.py
 .venv/bin/python -m pytest tests/architecture/test_import_boundaries.py -x -q
-uv run vulture --min-confidence 80 tinyagent
-uv run pylint --disable=all --enable=duplicate-code tinyagent
+uv run vulture --min-confidence 80 src/tinyagent
+uv run pylint --disable=all --enable=duplicate-code src/tinyagent
 python3 scripts/lint_debt.py
 ```
 
@@ -191,7 +191,7 @@ sg scan -r rules/harness_no_thin_protocols.yml docs/harness/
 
 If you build or publish wheels that are expected to ship the binding, the
 release gate in `HARNESS.md` applies: stage the built `_alchemy` artifact into
-`tinyagent/` first, then run
+`src/tinyagent/` first, then run
 `python3 scripts/check_release_binding.py --require-present`.
 
 ## Change Style
@@ -199,8 +199,8 @@ release gate in `HARNESS.md` applies: stage the built `_alchemy` artifact into
 - Keep diffs focused and coherent
 - Prefer deleting obsolete paths over adding compatibility layers
 - Keep modules small enough to satisfy the file-length ceiling enforced under
-  `tinyagent/`
-- Do not commit cache directories or empty package directories under `tinyagent/`
+  `src/tinyagent/`
+- Do not commit cache directories or empty package directories under `src/tinyagent/`
 - Add or update regression tests when fixing bugs or changing behavior
 
 ## Pull Requests

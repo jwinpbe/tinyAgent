@@ -177,7 +177,7 @@ Cache breakpoints are automatically placed on user message content blocks so the
 
 ## Optional Binding: `tinyagent._alchemy`
 
-This repo keeps `tinyagent/alchemy_provider.py` as the Python adapter for the
+This repo keeps `src/tinyagent/alchemy_provider.py` as the Python adapter for the
 optional `tinyagent._alchemy` extension built from the in-repo `rust/` crate.
 
 The compiled path is useful when you want OpenAI-compatible streaming without
@@ -259,7 +259,7 @@ Smoke validation after installing a wheel with the binding:
 ## Project Structure
 
 ```
-tinyagent/
+src/tinyagent/
 ├── agent.py              # Agent class, configuration & streaming helpers
 ├── agent_loop.py         # Core agent execution loop
 ├── agent_tool_execution.py  # Tool execution helpers
