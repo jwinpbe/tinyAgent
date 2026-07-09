@@ -69,6 +69,7 @@ async fn run_stream_inner(
         &model.provider,
         &model.base_url,
         &options.api_key,
+        options.auth,
         model.headers.as_ref(),
         options.headers.as_ref(),
         &params,

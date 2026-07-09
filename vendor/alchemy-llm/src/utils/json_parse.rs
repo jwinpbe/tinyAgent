@@ -88,16 +88,12 @@ pub fn parse_streaming_json_smart(s: &str) -> Value {
             '\\' if in_string => escape_next = true,
             '"' => in_string = !in_string,
             '{' if !in_string => stack.push('{'),
-            '}' if !in_string => {
-                if stack.last() == Some(&'{') {
-                    stack.pop();
-                }
+            '}' if !in_string && stack.last() == Some(&'{') => {
+                stack.pop();
             }
             '[' if !in_string => stack.push('['),
-            ']' if !in_string => {
-                if stack.last() == Some(&'[') {
-                    stack.pop();
-                }
+            ']' if !in_string && stack.last() == Some(&'[') => {
+                stack.pop();
             }
             _ => {}
         }

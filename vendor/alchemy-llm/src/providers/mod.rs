@@ -10,5 +10,5 @@ pub use anthropic::stream_anthropic_messages;
 pub use env::get_env_api_key;
 pub use kimi::stream_kimi_messages;
 pub use minimax::stream_minimax_completions;
-pub use openai_completions::{stream_openai_completions, OpenAICompletionsOptions};
+pub use openai_completions::{stream_openai_completions, AuthMode, OpenAICompletionsOptions};
 pub use zai::stream_zai_completions;

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
 
+use crate::providers::AuthMode;
 use crate::types::{
     Api, AssistantMessage, AssistantMessageEvent, EventStreamSender, Provider, StopReason,
     StopReasonError, StopReasonSuccess, Usage,
@@ -16,6 +17,7 @@ pub(crate) struct OpenAiLikeRequest<'a> {
     pub provider: &'a Provider,
     pub base_url: &'a str,
     pub api_key: &'a Option<String>,
+    pub auth: AuthMode,
     pub model_headers: Option<&'a HashMap<String, String>>,
     pub request_headers: Option<&'a HashMap<String, String>>,
     pub params: &'a serde_json::Value,
@@ -26,6 +28,7 @@ impl<'a> OpenAiLikeRequest<'a> {
         provider: &'a Provider,
         base_url: &'a str,
         api_key: &'a Option<String>,
+        auth: AuthMode,
         model_headers: Option<&'a HashMap<String, String>>,
         request_headers: Option<&'a HashMap<String, String>>,
         params: &'a serde_json::Value,
@@ -34,6 +37,7 @@ impl<'a> OpenAiLikeRequest<'a> {
             provider,
             base_url,
             api_key,
+            auth,
             model_headers,
             request_headers,
             params,
@@ -48,6 +52,22 @@ pub(crate) fn require_api_key<'a>(
     api_key
         .as_deref()
         .ok_or_else(|| crate::Error::NoApiKey(provider.to_string()))
+}
+
+/// Resolve the API key to send, honoring the request's [`AuthMode`].
+///
+/// `Bearer` keeps the existing pre-flight [`crate::Error::NoApiKey`] guard so
+/// misconfigured real providers fail fast. `None` skips that guard and returns
+/// `None`, leaving the `Authorization` header unset.
+pub(crate) fn resolve_request_api_key<'a>(
+    auth: AuthMode,
+    api_key: &'a Option<String>,
+    provider: &Provider,
+) -> Result<Option<&'a str>, crate::Error> {
+    match auth {
+        AuthMode::Bearer => Ok(Some(require_api_key(api_key, provider)?)),
+        AuthMode::None => Ok(None),
+    }
 }
 
 pub(crate) fn initialize_output(api: Api, provider: Provider, model: String) -> AssistantMessage {
@@ -108,7 +128,7 @@ where
         &mut Option<CurrentBlock>,
     ),
 {
-    let api_key = require_api_key(request.api_key, request.provider)?;
+    let api_key = resolve_request_api_key(request.auth, request.api_key, request.provider)?;
     let client = build_http_client(api_key, request.model_headers, request.request_headers)?;
     let response = send_streaming_request(&client, request.base_url, request.params).await?;
 
@@ -281,7 +301,10 @@ fn sse_field_value<'a>(line: &'a str, field: &str) -> Option<&'a str> {
 
 #[cfg(test)]
 mod tests {
-    use super::{done_reason_from_stop_reason, require_api_key, sse_field_value};
+    use super::{
+        done_reason_from_stop_reason, require_api_key, resolve_request_api_key, sse_field_value,
+    };
+    use crate::providers::AuthMode;
     use crate::types::{KnownProvider, Provider, StopReason, StopReasonSuccess};
 
     #[test]
@@ -323,6 +346,38 @@ mod tests {
             error.to_string(),
             "No API key provided for provider: openai"
         );
+    }
+
+    #[test]
+    fn resolve_request_api_key_bearer_returns_key_when_present() {
+        let provider = Provider::Known(KnownProvider::OpenAI);
+        let key = Some("test-key".to_string());
+
+        let resolved = resolve_request_api_key(AuthMode::Bearer, &key, &provider)
+            .expect("bearer should resolve");
+        assert_eq!(resolved, Some("test-key"));
+    }
+
+    #[test]
+    fn resolve_request_api_key_bearer_errors_when_missing() {
+        let provider = Provider::Known(KnownProvider::OpenAI);
+        let key = None;
+
+        let error = resolve_request_api_key(AuthMode::Bearer, &key, &provider)
+            .expect_err("bearer should require a key");
+        assert_eq!(
+            error.to_string(),
+            "No API key provided for provider: openai"
+        );
+    }
+
+    #[test]
+    fn resolve_request_api_key_none_skips_requirement_without_key() {
+        let provider = Provider::Known(KnownProvider::OpenAI);
+
+        let resolved = resolve_request_api_key(AuthMode::None, &None, &provider)
+            .expect("none mode should not require a key");
+        assert_eq!(resolved, None);
     }
 
     #[test]

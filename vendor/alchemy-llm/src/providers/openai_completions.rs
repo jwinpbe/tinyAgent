@@ -21,6 +21,7 @@ use crate::types::{
 #[derive(Debug, Clone, Default)]
 pub struct OpenAICompletionsOptions {
     pub api_key: Option<String>,
+    pub auth: AuthMode,
     pub temperature: Option<f64>,
     pub max_tokens: Option<u32>,
     pub tool_choice: Option<ToolChoice>,
@@ -41,7 +42,7 @@ pub enum ToolChoice {
     },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ReasoningEffort {
     Minimal,
@@ -49,6 +50,20 @@ pub enum ReasoningEffort {
     Medium,
     High,
     Xhigh,
+}
+
+/// Authentication mode for OpenAI-compatible requests.
+///
+/// `Bearer` (the default) sends an `Authorization: Bearer <api_key>` header
+/// and requires a non-empty API key, surfacing [`crate::Error::NoApiKey`]
+/// when none is configured. `None` omits the header entirely, for keyless
+/// OpenAI-compatible servers such as vLLM, Ollama, LM Studio, or llama.cpp.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AuthMode {
+    #[default]
+    Bearer,
+    None,
 }
 
 /// Resolved compatibility settings with all fields set.
@@ -146,6 +161,7 @@ async fn run_stream_inner(
         &model.provider,
         &model.base_url,
         &options.api_key,
+        options.auth,
         model.headers.as_ref(),
         options.headers.as_ref(),
         &params,
@@ -440,6 +456,14 @@ mod tests {
         assert!(compat.supports_reasoning_effort);
         assert_eq!(compat.max_tokens_field, MaxTokensField::MaxCompletionTokens);
         assert!(!compat.requires_mistral_tool_ids);
+    }
+
+    #[test]
+    fn default_options_use_bearer_auth() {
+        assert_eq!(
+            OpenAICompletionsOptions::default().auth,
+            super::AuthMode::Bearer
+        );
     }
 
     #[test]

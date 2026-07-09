@@ -16,7 +16,7 @@ from __future__ import annotations
 import importlib
 import os
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Literal, Protocol, TypeAlias, cast
 
 from .agent_types import (
     AgentTool,
@@ -58,6 +58,14 @@ _PROVIDER_API_KEY_ENV = {
     "minimax": "MINIMAX_API_KEY",
     "minimax-cn": "MINIMAX_CN_API_KEY",
 }
+
+#: Authentication mode for OpenAI-compatible requests.
+#:
+#: ``"bearer"`` (the default) sends an ``Authorization: Bearer <api_key>``
+#: header and requires a key, surfacing a clear ``NoApiKey`` error when none
+#: is configured. ``"none"`` omits the header, for keyless OpenAI-compatible
+#: servers such as vLLM, Ollama, LM Studio, or llama.cpp.
+AuthMode: TypeAlias = Literal["bearer", "none"]
 
 
 def _get_alchemy_module() -> _AlchemyModule:
@@ -101,6 +109,7 @@ class OpenAICompatModel(ProviderMetadataModel):
     api: str = "openai-completions"
 
     base_url: str = DEFAULT_OPENAI_COMPAT_CHAT_COMPLETIONS_URL
+    auth: AuthMode = "bearer"
 
 
 @dataclass
@@ -187,6 +196,12 @@ def _resolve_api_key(model: Model, options: SimpleStreamOptions) -> str | None:
     return os.environ.get(env_var)
 
 
+def _resolve_auth_mode(model: Model) -> AuthMode:
+    if isinstance(model, OpenAICompatModel):
+        return model.auth
+    return "bearer"
+
+
 async def stream_alchemy_openai_completions(
     model: Model,
     context: Context,
@@ -223,6 +238,7 @@ async def stream_alchemy_openai_completions(
 
     options_dict: dict[str, object] = {
         "api_key": _resolve_api_key(model, options),
+        "auth": _resolve_auth_mode(model),
         "temperature": options.temperature,
         "max_tokens": options.max_tokens,
     }

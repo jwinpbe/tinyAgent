@@ -5,7 +5,7 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use alchemy_llm::providers::openai_completions::ReasoningEffort;
+use alchemy_llm::providers::openai_completions::{AuthMode, ReasoningEffort};
 use alchemy_llm::types::{
     AnthropicMessages, AssistantMessage as AlchemyAssistantMessage,
     AssistantMessageEvent as AlchemyEvent, Content, Context as AlchemyContext, InputType,
@@ -75,7 +75,7 @@ fn event_name(event: &AlchemyEvent) -> &'static str {
     }
 }
 
-fn event_item_name<'a>(item: &'a EventItem) -> &'a str {
+fn event_item_name(item: &EventItem) -> &str {
     match item {
         Ok(Some(value)) => value
             .get("type")
@@ -721,6 +721,7 @@ fn convert_options(
 
     Ok(OpenAICompletionsOptions {
         api_key: optional_string(object.get("api_key"))?,
+        auth: parse_auth_mode(object.get("auth"))?,
         temperature: optional_f64(object.get("temperature"))?,
         max_tokens: optional_u32(object.get("max_tokens"))?,
         tool_choice: None,
@@ -955,6 +956,20 @@ fn parse_reasoning_effort(mode: &ReasoningMode) -> BindingResult<Option<Reasonin
     }
 }
 
+fn parse_auth_mode(value: Option<&Value>) -> BindingResult<AuthMode> {
+    match value {
+        None | Some(Value::Null) => Ok(AuthMode::Bearer),
+        Some(Value::String(inner)) => match inner.as_str() {
+            "bearer" => Ok(AuthMode::Bearer),
+            "none" => Ok(AuthMode::None),
+            other => Err(format!(
+                "invalid auth mode `{other}` (expected `bearer` or `none`)"
+            )),
+        },
+        Some(other) => Err(format!("expected string for auth, got {other}")),
+    }
+}
+
 fn reasoning_enabled(mode: &ReasoningMode) -> bool {
     match mode {
         ReasoningMode::Bool(value) => *value,
@@ -1063,6 +1078,37 @@ mod tests {
         let options = convert_options(&json!({}), &model.reasoning).expect("options should parse");
         assert!(options.reasoning_effort.is_none());
         assert!(reasoning_enabled(&model.reasoning));
+    }
+
+    #[test]
+    fn convert_options_defaults_auth_to_bearer_when_absent() {
+        let model = test_model(json!(false));
+        let options = convert_options(&json!({}), &model.reasoning).expect("options should parse");
+        assert_eq!(options.auth, AuthMode::Bearer);
+    }
+
+    #[test]
+    fn convert_options_parses_none_auth_mode() {
+        let model = test_model(json!(false));
+        let options = convert_options(&json!({"auth": "none"}), &model.reasoning)
+            .expect("options should parse");
+        assert_eq!(options.auth, AuthMode::None);
+    }
+
+    #[test]
+    fn convert_options_parses_bearer_auth_mode() {
+        let model = test_model(json!(false));
+        let options = convert_options(&json!({"auth": "bearer"}), &model.reasoning)
+            .expect("options should parse");
+        assert_eq!(options.auth, AuthMode::Bearer);
+    }
+
+    #[test]
+    fn convert_options_rejects_unknown_auth_mode() {
+        let model = test_model(json!(false));
+        let error = convert_options(&json!({"auth": "token"}), &model.reasoning)
+            .expect_err("unknown auth mode should be rejected");
+        assert!(error.contains("invalid auth mode"));
     }
 
     #[test]

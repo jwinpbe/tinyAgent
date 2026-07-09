@@ -3,7 +3,7 @@ pub use crate::types::{AssistantMessageEventStream, EventStreamSender};
 use crate::error::{Error, Result};
 use crate::providers::{
     get_env_api_key, stream_anthropic_messages, stream_kimi_messages, stream_minimax_completions,
-    stream_openai_completions, stream_zai_completions, OpenAICompletionsOptions,
+    stream_openai_completions, stream_zai_completions, AuthMode, OpenAICompletionsOptions,
 };
 use crate::types::{
     AnthropicMessages, Api, AssistantMessage, Context, KnownProvider, MinimaxCompletions, Model,
@@ -18,8 +18,9 @@ use crate::types::{
 ///
 /// # Errors
 ///
-/// Returns `Error::NoApiKey` if no API key is provided and none can be found
-/// in the environment for the model's provider.
+/// Returns `Error::NoApiKey` if no API key is provided, none can be found
+/// in the environment for the model's provider, and the auth mode is not
+/// [`AuthMode::None`] (keyless OpenAI-compatible servers).
 pub fn stream<TApi>(
     model: &Model<TApi>,
     context: &Context,
@@ -30,14 +31,27 @@ where
 {
     let api = model.api.api();
 
-    // Get API key from options or environment
+    // Auth mode None opts out of the API key requirement entirely. See
+    // [`AuthMode`] for the keyless OpenAI-compatible server use case.
+    let auth_is_none = options.as_ref().is_some_and(|o| o.auth == AuthMode::None);
+
+    // Get API key from options or environment. The env fallback is skipped
+    // when auth is None so a stray provider env var is never sent to a
+    // keyless endpoint.
     let api_key = options
         .as_ref()
         .and_then(|o| o.api_key.clone())
-        .or_else(|| get_env_api_key(&model.provider));
+        .or_else(|| {
+            if auth_is_none {
+                None
+            } else {
+                get_env_api_key(&model.provider)
+            }
+        });
 
     // Check if API key is required
-    let needs_api_key = !matches!(api, Api::GoogleVertex | Api::BedrockConverseStream);
+    let needs_api_key =
+        !matches!(api, Api::GoogleVertex | Api::BedrockConverseStream) && !auth_is_none;
 
     if needs_api_key && api_key.is_none() {
         return Err(Error::NoApiKey(model.provider.to_string()));
@@ -278,6 +292,39 @@ mod tests {
 
         assert!(!vertex_needs_key);
         assert!(!bedrock_needs_key);
+    }
+
+    #[tokio::test]
+    async fn auth_mode_none_bypasses_api_key_requirement() {
+        let model = featherless_test_model("http://127.0.0.1:1/v1/chat/completions");
+        let options = Some(OpenAICompletionsOptions {
+            auth: AuthMode::None,
+            ..OpenAICompletionsOptions::default()
+        });
+
+        // With auth=none and no key, stream() should NOT return NoApiKey.
+        // It dispatches to the provider (which will fail at the HTTP level,
+        // not at the pre-flight gate).
+        let result = stream(&model, &Context::default(), options);
+        assert!(
+            result.is_ok(),
+            "auth=none should bypass the key requirement"
+        );
+    }
+
+    #[test]
+    fn auth_mode_bearer_still_requires_api_key() {
+        let model = featherless_test_model("http://127.0.0.1:1/v1/chat/completions");
+        let options = Some(OpenAICompletionsOptions {
+            auth: AuthMode::Bearer,
+            ..OpenAICompletionsOptions::default()
+        });
+
+        match stream(&model, &Context::default(), options) {
+            Err(crate::error::Error::NoApiKey(_)) => {}
+            Err(e) => panic!("expected NoApiKey error, got {e}"),
+            Ok(_) => panic!("expected NoApiKey error, but stream was created"),
+        }
     }
 
     #[test]

@@ -217,6 +217,7 @@ def test_alchemy_provider_forwards_full_payload_and_enforces_contract(
         ]
         assert fake_module.captured_options == {
             "api_key": "k-test",
+            "auth": "bearer",
             "temperature": 0.2,
             "max_tokens": 77,
         }

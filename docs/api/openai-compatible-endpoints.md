@@ -55,6 +55,29 @@ Legacy aliases are not required by the current provider path.
 For `provider="openrouter"`, env fallback works out of the box. Passing
 `options.api_key` explicitly is still supported and takes precedence.
 
+### Auth mode
+
+`OpenAICompatModel.auth` controls how the request is authenticated:
+
+- `"bearer"` (default): sends an `Authorization: Bearer <api_key>` header and
+  requires a key. When none resolves via the steps above, the binding fails
+  fast with a clear `NoApiKey` error instead of sending a bogus credential.
+- `"none"`: omits the `Authorization` header entirely, for keyless
+  OpenAI-compatible servers (vLLM, Ollama, LM Studio, llama.cpp). The
+  `NoApiKey` guard is skipped, so no key needs to be configured.
+
+Use `"none"` only for endpoints you know are keyless; real providers should
+keep the default so misconfiguration surfaces immediately.
+
+```python
+model = OpenAICompatModel(
+    provider="openai",
+    id="qwen2.5-32b",
+    base_url="http://localhost:8000/v1/chat/completions",
+    auth="none",
+)
+```
+
 ### Base URL behavior
 
 - `base_url` must be a non-empty string.

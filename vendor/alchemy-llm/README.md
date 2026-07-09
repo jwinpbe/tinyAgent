@@ -79,7 +79,7 @@ async fn main() -> alchemy_llm::Result<()> {
         name: "GPT-4o Mini".to_string(),
         api: OpenAICompletions,
         provider: Provider::Known(KnownProvider::OpenAI),
-        base_url: "https://api.openai.com/v1".to_string(),
+        base_url: "https://api.openai.com/v1/chat/completions".to_string(),
         reasoning: false,
         input: vec![InputType::Text],
         cost: ModelCost {

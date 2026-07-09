@@ -19,6 +19,7 @@ from tinyagent.alchemy_provider import (
     OpenAICompatModel,
     _get_alchemy_module,
     _resolve_api_key,
+    _resolve_auth_mode,
     _resolve_base_url,
     _resolve_model_api,
     stream_alchemy_openai_completions,
@@ -109,6 +110,21 @@ def test_resolve_api_key_unknown_provider_returns_none() -> None:
     assert _resolve_api_key(model, SimpleStreamOptions()) is None
 
 
+def test_resolve_auth_mode_defaults_to_bearer_for_generic_model() -> None:
+    model = Model(provider="openai", id="x", api="openai-completions")
+    assert _resolve_auth_mode(model) == "bearer"
+
+
+def test_resolve_auth_mode_uses_openai_compat_model_override() -> None:
+    model = OpenAICompatModel(provider="openai", id="x", auth="none")
+    assert _resolve_auth_mode(model) == "none"
+
+
+def test_resolve_auth_mode_defaults_to_bearer_on_openai_compat_model() -> None:
+    model = OpenAICompatModel(provider="openai", id="x")
+    assert _resolve_auth_mode(model) == "bearer"
+
+
 def test_get_alchemy_module_falls_back_to_top_level_package(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -183,13 +199,16 @@ class _FakeHandle:
 
 
 class _FakeAlchemyModule:
+    def __init__(self) -> None:
+        self.options: dict[str, object] | None = None
+
     def openai_completions_stream(
         self,
         model: dict[str, object],
         context: dict[str, object],
         options: dict[str, object],
     ) -> _FakeHandle:
-        del model, context, options
+        self.options = options
         return _FakeHandle()
 
 
@@ -253,3 +272,50 @@ async def test_stream_alchemy_accepts_valid_model_messages(
     )
 
     assert response is not None
+
+
+async def test_stream_alchemy_injects_bearer_auth_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_module = _FakeAlchemyModule()
+    monkeypatch.setattr("tinyagent.alchemy_provider._ALCHEMY_MODULE", fake_module)
+
+    context = Context(
+        system_prompt="test",
+        messages=[UserMessage(content=[TextContent(text="hello")])],
+    )
+
+    await stream_alchemy_openai_completions(
+        OpenAICompatModel(provider="openai", id="gpt-4o-mini"),
+        context,
+        SimpleStreamOptions(),
+    )
+
+    assert fake_module.options is not None
+    assert fake_module.options["auth"] == "bearer"
+
+
+async def test_stream_alchemy_injects_none_auth_from_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_module = _FakeAlchemyModule()
+    monkeypatch.setattr("tinyagent.alchemy_provider._ALCHEMY_MODULE", fake_module)
+
+    context = Context(
+        system_prompt="test",
+        messages=[UserMessage(content=[TextContent(text="hello")])],
+    )
+
+    await stream_alchemy_openai_completions(
+        OpenAICompatModel(
+            provider="openai",
+            id="gpt-4o-mini",
+            base_url="http://localhost:8000/v1/chat/completions",
+            auth="none",
+        ),
+        context,
+        SimpleStreamOptions(),
+    )
+
+    assert fake_module.options is not None
+    assert fake_module.options["auth"] == "none"
