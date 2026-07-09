@@ -4,7 +4,7 @@ when_to_read:
   - When working with shared runtime types
   - When checking message, event, or state model contracts
 summary: Reference for the shared TinyAgent message, event, and state models.
-last_updated: "2026-05-25"
+last_updated: "2026-07-08"
 ---
 
 # Agent Types Module
@@ -17,17 +17,18 @@ instead of dict indexing in migrated paths.
 
 ## Content Types
 
+Content blocks inherit from `_TaggedContent` which provides `tag_field="type"`
+and a `.type` property returning the tag value (e.g. `"text"`, `"image"`).
+Serialization via `model_dump()` uses `msgspec.to_builtins` so the `type`
+discriminant is included in the output.
+
 ### TextContent
 
 ```python
-class TextContent(_AgentBaseModel, tag="text"):
+class TextContent(_TaggedContent, tag="text"):
     text: str | None = None
     text_signature: str | None = None
     cache_control: CacheControl | None = None
-
-    @property
-    def type(self) -> Literal["text"]:
-        return "text"
 ```
 
 Text block in a message.
@@ -35,13 +36,9 @@ Text block in a message.
 ### ImageContent
 
 ```python
-class ImageContent(_AgentBaseModel, tag="image"):
+class ImageContent(_TaggedContent, tag="image"):
     url: str | None = None
     mime_type: str | None = None
-
-    @property
-    def type(self) -> Literal["image"]:
-        return "image"
 ```
 
 Image block (for vision-capable providers).
@@ -49,14 +46,10 @@ Image block (for vision-capable providers).
 ### ThinkingContent
 
 ```python
-class ThinkingContent(_AgentBaseModel, tag="thinking"):
+class ThinkingContent(_TaggedContent, tag="thinking"):
     thinking: str | None = None
     thinking_signature: str | None = None
     cache_control: CacheControl | None = None
-
-    @property
-    def type(self) -> Literal["thinking"]:
-        return "thinking"
 ```
 
 Reasoning/thinking block returned by models with reasoning capability.
@@ -64,15 +57,11 @@ Reasoning/thinking block returned by models with reasoning capability.
 ### ToolCallContent
 
 ```python
-class ToolCallContent(_AgentBaseModel, tag="tool_call"):
+class ToolCallContent(_TaggedContent, tag="tool_call"):
     id: str | None = None
     name: str | None = None
     arguments: dict[str, Any] = {}
     partial_json: str | None = None
-
-    @property
-    def type(self) -> Literal["tool_call"]:
-        return "tool_call"
 ```
 
 ### AssistantContent
@@ -94,16 +83,17 @@ Used for Anthropic-style prompt caching.
 
 ## Message Types
 
+Messages inherit from `_TaggedMessage` which provides `tag_field="role"`
+and a `.role` property returning the tag value (e.g. `"user"`, `"assistant"`).
+Serialization via `model_dump()` uses `msgspec.to_builtins` so the `role`
+discriminant is included in the output.
+
 ### UserMessage
 
 ```python
-class UserMessage(_AgentBaseModel):
+class UserMessage(_TaggedMessage, tag="user"):
     content: list[TextContent | ImageContent] = []
     timestamp: int | None = None
-
-    @property
-    def role(self) -> Literal["user"]:
-        return "user"
 ```
 
 ### AssistantMessage
@@ -113,7 +103,7 @@ StopReason = Literal[
     "complete", "error", "aborted", "tool_calls", "stop", "length", "tool_use"
 ]
 
-class AssistantMessage(_AgentBaseModel):
+class AssistantMessage(_TaggedMessage, tag="assistant"):
     content: list[AssistantContent | None] = []
     stop_reason: StopReason | None = None
     timestamp: int | None = None
@@ -122,16 +112,12 @@ class AssistantMessage(_AgentBaseModel):
     model: str | None = None
     usage: dict[str, Any] | None = None
     error_message: str | None = None
-
-    @property
-    def role(self) -> Literal["assistant"]:
-        return "assistant"
 ```
 
 ### ToolResultMessage
 
 ```python
-class ToolResultMessage(_AgentBaseModel):
+class ToolResultMessage(_TaggedMessage, tag="tool_result"):
     tool_call_id: str | None = None
     tool_name: str | None = None
     content: list[TextContent | ImageContent] = []
@@ -139,10 +125,6 @@ class ToolResultMessage(_AgentBaseModel):
     is_error: bool = False
     terminate: bool = False
     timestamp: int | None = None
-
-    @property
-    def role(self) -> Literal["tool_result"]:
-        return "tool_result"
 ```
 
 `terminate` is host-side loop-control metadata. It is intentionally excluded from
@@ -159,17 +141,24 @@ LLM-boundary-compatible messages.
 ### AgentMessage
 
 ```python
-class CustomAgentMessage(_AgentBaseModel):
+class CustomAgentMessage(_TaggedMessage, tag="custom"):
     timestamp: int | None = None
 
     @property
     def role(self) -> str:
         return self.__class__.__name__
 
+    @classmethod
+    def model_validate(cls, data: dict[str, object]) -> "AgentMessage":
+        # Dispatch to the right subclass based on role tag
+        ...
+
 AgentMessage = Union[Message, CustomAgentMessage]
 ```
 
-Internal agent messages may include custom roles.
+Internal agent messages may include custom roles. `CustomAgentMessage.role` returns
+the class name (not the tag) for backward compatibility. `model_validate` dispatches
+to `UserMessage`, `AssistantMessage`, or `ToolResultMessage` based on the `role` field.
 
 ## Tool Types
 
