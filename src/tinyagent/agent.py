@@ -243,7 +243,7 @@ def extract_text(message: AgentMessage | None) -> str:
 
     if not message:
         return ""
-    if not isinstance(message, UserMessage | AssistantMessage | ToolResultMessage):  # type: ignore[arg-type]
+    if not isinstance(message, (UserMessage, AssistantMessage, ToolResultMessage)):
         return ""
 
     parts: list[str] = []
@@ -269,8 +269,7 @@ def _create_error_message(model: Model, error: Exception, was_aborted: bool) -> 
 
 
 def _is_llm_message(message: AgentMessage) -> TypeGuard[Message]:
-    role = message.role
-    return role in {"user", "assistant", "tool_result"}
+    return isinstance(message, (UserMessage, AssistantMessage, ToolResultMessage))
 
 
 async def default_convert_to_llm(messages: list[AgentMessage]) -> list[Message]:
@@ -483,7 +482,7 @@ class Agent:
 
     def _last_assistant_message(self) -> AgentMessage | None:
         for msg in reversed(self._state.messages):
-            if msg.role == "assistant":
+            if isinstance(msg, AssistantMessage):
                 return msg
         return None
 
@@ -510,7 +509,7 @@ class Agent:
 
         new_messages = self._state.messages[before:]
         for msg in reversed(new_messages):
-            if msg.role == "assistant":
+            if isinstance(msg, AssistantMessage):
                 return msg
 
         raise RuntimeError("No assistant message produced")
@@ -614,14 +613,14 @@ class Agent:
         messages = self._state.messages
         if len(messages) == 0:
             raise RuntimeError("No messages to continue from")
-        if messages[-1].role == "assistant":
+        if isinstance(messages[-1], AssistantMessage):
             raise RuntimeError("Cannot continue from message role: assistant")
 
         await self._run_loop(None)
 
         new_messages = self._state.messages[before:]
         for msg in reversed(new_messages):
-            if msg.role == "assistant":
+            if isinstance(msg, AssistantMessage):
                 return msg
 
         raise RuntimeError("No assistant message produced")

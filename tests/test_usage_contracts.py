@@ -393,13 +393,13 @@ def test_agent_preserves_usage_and_metadata_from_stream_function() -> None:
         message = await agent.prompt("hello")
         assistant_message = cast(AssistantMessage, message)
 
-        assert assistant_message.role == "assistant"
+        assert isinstance(assistant_message, AssistantMessage)
         assert assistant_message.usage == _usage_payload()
         assert assistant_message.provider == "openrouter"
         assert assistant_message.api == "openai-completions"
 
         context = cast(Context, captured["context"])
-        assert context.messages[-1].role == "user"
+        assert isinstance(context.messages[-1], UserMessage)
 
     _run(_scenario())
 
@@ -481,7 +481,7 @@ def test_agent_does_not_continue_turn_when_tool_execution_returns_no_results(
 
         assert call_count == 1
         assert assistant_message.stop_reason == "tool_calls"
-        assert not any(msg.role == "tool_result" for msg in agent.state.messages)
+        assert not any(isinstance(msg, ToolResultMessage) for msg in agent.state.messages)
 
     _run(_scenario())
 

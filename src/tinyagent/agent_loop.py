@@ -469,8 +469,7 @@ def agent_loop_continue(
         raise ValueError("Cannot continue: no messages in context")
 
     last_message = context.messages[-1]
-    last_role = last_message.role
-    if last_role == "assistant":
+    if isinstance(last_message, AssistantMessage):
         raise ValueError("Cannot continue from message role: assistant")
 
     stream = create_agent_stream()

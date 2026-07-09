@@ -47,7 +47,7 @@ async def test_cache_breakpoints_annotates_all_user_messages() -> None:
     # All user messages should have cache_control on the last block
     for idx in (0, 2, 4):
         user_msg = cast(UserMessage, result[idx])
-        assert user_msg.role == "user"
+        assert isinstance(user_msg, UserMessage)
         content = user_msg.content
         assert isinstance(content[-1], TextContent)
         assert content[-1].cache_control is not None
@@ -88,7 +88,7 @@ async def test_cache_breakpoints_no_user_messages() -> None:
     ]
     result = await add_cache_breakpoints(messages)
     assert len(result) == 1
-    assert result[0].role == "assistant"
+    assert isinstance(result[0], AssistantMessage)
 
 
 # -- OpenRouter helpers tests --

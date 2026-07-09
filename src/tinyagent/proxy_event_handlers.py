@@ -68,21 +68,21 @@ def _get_content(partial: AssistantMessage, index: int) -> AssistantContent | No
 
 
 def _is_text_content(content: AssistantContent | None) -> TypeGuard[TextContent]:
-    return isinstance(content, TextContent) and content.type == "text"
+    return isinstance(content, TextContent)
 
 
 def _is_thinking_content(content: AssistantContent | None) -> TypeGuard[ThinkingContent]:
-    return isinstance(content, ThinkingContent) and content.type == "thinking"
+    return isinstance(content, ThinkingContent)
 
 
 def _is_tool_call(content: AssistantContent | None) -> TypeGuard[ToolCallContent]:
-    return isinstance(content, ToolCallContent) and content.type == "tool_call"
+    return isinstance(content, ToolCallContent)
 
 
 def _normalize_stop_reason(value: object, default: StopReason) -> StopReason:
     match value:
         case "complete" | "error" | "aborted" | "tool_calls" | "stop" | "length" | "tool_use":
-            return value  # type: ignore[return-value]
+            return value
         case _:
             return default
 

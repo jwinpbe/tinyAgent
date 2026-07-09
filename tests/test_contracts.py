@@ -78,22 +78,22 @@ class TestProxyEvents:
 
 
 class TestMessageRoles:
-    """Messages use correct role literals."""
+    """Messages serialize with correct role tag."""
 
     def test_user_message_role(self) -> None:
         msg = UserMessage(content=[])
-        assert msg.role == "user"
+        assert msg.model_dump(exclude_none=True)["role"] == "user"
 
     def test_assistant_message_role(self) -> None:
         msg = AssistantMessage(content=[])
-        assert msg.role == "assistant"
+        assert msg.model_dump(exclude_none=True)["role"] == "assistant"
 
     def test_tool_result_message_role(self) -> None:
         msg = ToolResultMessage(
             tool_call_id="x",
             content=[],
         )
-        assert msg.role == "tool_result"
+        assert msg.model_dump(exclude_none=True)["role"] == "tool_result"
 
     def test_tool_result_termination_flag_is_host_side_only(self) -> None:
         msg = ToolResultMessage(

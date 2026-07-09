@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
-from msgspec import field
 from enum import Enum
 from typing import Any, Literal, Protocol, TypeAlias, TypeGuard, TypeVar, Union, runtime_checkable
 
 import msgspec
-from msgspec.structs import StructMeta  # type: ignore[attr-defined]
 
 # ------------------------------
 # JSON-ish helper types
@@ -40,8 +38,34 @@ ZERO_USAGE: dict[str, Any] = {
 # ------------------------------
 
 
+def _strip_none_recursive(obj: object) -> object:
+    """Recursively remove None values from dicts and lists."""
+    if isinstance(obj, dict):
+        return {k: _strip_none_recursive(v) for k, v in obj.items() if v is not None}
+    if isinstance(obj, list):
+        return [_strip_none_recursive(item) for item in obj]
+    return obj
+
+
+def _tagged_model_dump(
+    struct: msgspec.Struct, exclude_none: bool
+) -> dict[str, object]:
+    """model_dump for tagged structs: uses to_builtins so the tag field
+    is included in the serialized output (required for wire-format stability)."""
+    result: dict[str, object] = msgspec.to_builtins(struct)
+    if exclude_none:
+        result = _strip_none_recursive(result)  # type: ignore[assignment]
+    return result
+
+
 class _AgentBaseModel(msgspec.Struct, kw_only=True):
-    """Shared base for migrated message/state models."""
+    """Shared base for migrated message/state models.
+
+    Non-tagged structs use asdict (preserves nested structs, tolerates
+    non-serializable fields like asyncio.Event).  Tagged subclasses
+    override model_dump to use to_builtins so the discriminant tag is
+    emitted.
+    """
 
     def model_dump(self, exclude_none: bool = False) -> dict[str, object]:
         result = msgspec.structs.asdict(self)
@@ -50,43 +74,32 @@ class _AgentBaseModel(msgspec.Struct, kw_only=True):
         return result
 
     @classmethod
-    def model_validate(cls, data: dict[str, object]) -> "_AgentBaseModel":
+    def model_validate(cls, data: dict[str, object]) -> _AgentBaseModel:
         return msgspec.convert(data, cls)
 
 
-class _TaggedContentMeta(StructMeta):
-    """Metaclass that enables tagged unions with `type` as the tag field."""
+class _TaggedContent(_AgentBaseModel, tag_field="type", tag=True):
+    """Base for content blocks tagged by ``type`` field."""
 
-    def __new__(mcls, name, bases, ns, **kw):
-        kw.setdefault("tag_field", "type")
-        kw.setdefault("tag", True)
-        return super().__new__(mcls, name, bases, ns, **kw)
+    @property
+    def type(self) -> str:
+        """Return the content block's type tag (e.g. "text", "image")."""
+        return self.__class__.__struct_config__.tag  # type: ignore[return-value]
 
-    def __init__(cls, name, bases, ns, **kw):
-        super().__init__(name, bases, ns, **kw)
-        # Inject model_dump override to include the tag/role property.
-        # Delegates to the base class method to avoid duplicating exclude_none logic.
-        if "model_dump" not in ns:
+    def model_dump(self, exclude_none: bool = False) -> dict[str, object]:
+        return _tagged_model_dump(self, exclude_none)
 
-            def _model_dump(self, exclude_none: bool = False) -> dict[str, object]:
-                result = msgspec.to_builtins(self)
-                if exclude_none:
 
-                    def _strip_none(obj):
-                        if isinstance(obj, dict):
-                            return {k: _strip_none(v) for k, v in obj.items() if v is not None}
-                        if isinstance(obj, list):
-                            return [_strip_none(item) for item in obj]
-                        return obj
+class _TaggedMessage(_AgentBaseModel, tag_field="role", tag=True):
+    """Base for message types tagged by ``role`` field."""
 
-                    result = _strip_none(result)
-                # Include the tag field from the property (role for messages, type for content)
-                for prop in ("role", "type"):
-                    if hasattr(self, prop) and prop not in result:
-                        result[prop] = getattr(self, prop)
-                return result
+    @property
+    def role(self) -> str:
+        """Return the message's role tag (e.g. "user", "assistant")."""
+        return self.__class__.__struct_config__.tag  # type: ignore[return-value]
 
-            cls.model_dump = _model_dump
+    def model_dump(self, exclude_none: bool = False) -> dict[str, object]:
+        return _tagged_model_dump(self, exclude_none)
 
 
 @runtime_checkable
@@ -138,42 +151,30 @@ class CacheControl(_AgentBaseModel):
     type: str | None = None
 
 
-class TextContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="text"):
+class TextContent(_TaggedContent, tag="text"):
     """Text content block."""
 
     text: str | None = None
     text_signature: str | None = None
     cache_control: CacheControl | None = None
 
-    @property
-    def type(self) -> Literal["text"]:
-        return "text"
 
-
-class ImageContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="image"):
+class ImageContent(_TaggedContent, tag="image"):
     """Image content block."""
 
     url: str | None = None
     mime_type: str | None = None
 
-    @property
-    def type(self) -> Literal["image"]:
-        return "image"
 
-
-class ThinkingContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="thinking"):
+class ThinkingContent(_TaggedContent, tag="thinking"):
     """Thinking content block."""
 
     thinking: str | None = None
     thinking_signature: str | None = None
     cache_control: CacheControl | None = None
 
-    @property
-    def type(self) -> Literal["thinking"]:
-        return "thinking"
 
-
-class ToolCallContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="tool_call"):
+class ToolCallContent(_TaggedContent, tag="tool_call"):
     """Tool call content block."""
 
     id: str | None = None
@@ -181,25 +182,17 @@ class ToolCallContent(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="tool_c
     arguments: dict[str, Any] = {}
     partial_json: str | None = None
 
-    @property
-    def type(self) -> Literal["tool_call"]:
-        return "tool_call"
-
 
 ToolCall: TypeAlias = ToolCallContent
 
 AssistantContent: TypeAlias = TextContent | ThinkingContent | ToolCallContent
 
 
-class UserMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="user"):
+class UserMessage(_TaggedMessage, tag="user"):
     """User message for LLM."""
 
     content: list[TextContent | ImageContent] = []
     timestamp: int | None = None
-
-    @property
-    def role(self) -> Literal["user"]:
-        return "user"
 
 
 StopReason: TypeAlias = Literal[
@@ -223,7 +216,7 @@ STOP_REASONS: frozenset[StopReason] = frozenset({
 })
 
 
-class AssistantMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="assistant"):
+class AssistantMessage(_TaggedMessage, tag="assistant"):
     """Assistant message from LLM."""
 
     content: list[AssistantContent | None] = []
@@ -235,12 +228,8 @@ class AssistantMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="assis
     usage: dict[str, Any] | None = None
     error_message: str | None = None
 
-    @property
-    def role(self) -> Literal["assistant"]:
-        return "assistant"
 
-
-class ToolResultMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="tool_result"):
+class ToolResultMessage(_TaggedMessage, tag="tool_result"):
     """Tool result message."""
 
     tool_call_id: str | None = None
@@ -251,10 +240,6 @@ class ToolResultMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="tool
     terminate: bool = False
     timestamp: int | None = None
 
-    @property
-    def role(self) -> Literal["tool_result"]:
-        return "tool_result"
-
     def model_dump(self, exclude_none: bool = False) -> dict[str, object]:
         result = super().model_dump(exclude_none=exclude_none)
         result.pop("terminate", None)
@@ -264,18 +249,19 @@ class ToolResultMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="tool
 Message = Union[UserMessage, AssistantMessage, ToolResultMessage]
 
 
-class CustomAgentMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="custom"):
+class CustomAgentMessage(_TaggedMessage, tag="custom"):
     """Base class for custom agent messages."""
 
     timestamp: int | None = None
 
     @property
     def role(self) -> str:
+        """Return the class name as role, matching pre-refactor behavior."""
         return self.__class__.__name__
 
     @classmethod
     def model_validate(cls, data: dict[str, object]) -> "AgentMessage":
-        # Dispatch to the right subclass based on role
+        # Dispatch to the right subclass based on role tag
         role = data.get("role", "")
         match role:
             case "user":
@@ -284,7 +270,7 @@ class CustomAgentMessage(_AgentBaseModel, metaclass=_TaggedContentMeta, tag="cus
                 return msgspec.convert(data, AssistantMessage)
             case "tool_result":
                 return msgspec.convert(data, ToolResultMessage)
-        return super().model_validate(data)
+        return super().model_validate(data)  # type: ignore[return-value]
 
 
 AgentMessage = Union[Message, CustomAgentMessage]
