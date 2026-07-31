@@ -17,6 +17,16 @@ This project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- Image content blocks are now supported end-to-end in the `_alchemy` binding.
+  `ImageContent(url, mime_type)` accepts data URLs, raw base64, `file://`
+  paths, and `http(s)://` URLs (fetched client-side with a timeout and size
+  cap). Image blocks are emitted as OpenAI-compatible `image_url` parts.
+- `AssistantMessage.content` now accepts `ImageContent` blocks so assistant
+  messages containing images round-trip through `msgspec` conversion.
+
+### Changed
+- The alchemy binding no longer rejects image input; models are configured
+  with `InputType::Image` so image blocks are serialized instead of dropped.
 
 ## [1.2.28] - 2026-06-21
 

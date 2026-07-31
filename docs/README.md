@@ -239,10 +239,33 @@ Smoke validation after installing a wheel with the binding:
 
 - The optional binding currently dispatches only `openai-completions` and
   `minimax-completions`.
-- Image blocks are not yet supported (text and thinking blocks work).
 - `next_event()` is blocking and runs in a thread via `asyncio.to_thread` -- this adds
   slight overhead compared to a native async generator, but keeps the GIL released during
   the native work.
+
+### Image input
+
+Pass images to any prompt method via the `images` argument:
+
+```python
+from tinyagent import ImageContent
+
+await agent.prompt(
+    "What is printed on this card?",
+    images=[ImageContent(url="data:image/jpeg;base64,...", mime_type="image/jpeg")],
+)
+```
+
+`ImageContent.url` accepts four forms:
+
+- `data:<mime>;base64,<payload>` — the payload is decoded client-side; the mime type is taken from the URL prefix.
+- raw base64 — decoded with the `mime_type` field as a hint.
+- `file://<path>` — read from disk; mime guessed from the file extension.
+- `http(s)://<url>` — fetched client-side with a 30s timeout and a 20 MB cap; mime taken from the `mime_type` field or the `Content-Type` response header.
+
+Passing a remote URL fetches it on the framework side, so only pass URLs your
+own code controls. To fetch a remote image yourself, encode it to a data URL
+and pass that instead.
 
 ## Documentation
 

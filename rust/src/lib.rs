@@ -3,14 +3,14 @@ use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::thread;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use alchemy_llm::providers::openai_completions::{AuthMode, ReasoningEffort};
 use alchemy_llm::types::{
     AnthropicMessages, AssistantMessage as AlchemyAssistantMessage,
-    AssistantMessageEvent as AlchemyEvent, Content, Context as AlchemyContext, InputType,
-    Message as AlchemyMessage, MinimaxCompletions, Model, ModelCost, OpenAICompletions, Provider,
-    StopReason, StopReasonError, StopReasonSuccess, Tool, ToolCallId, ToolResultContent,
+    AssistantMessageEvent as AlchemyEvent, Content, Context as AlchemyContext, ImageContent,
+    InputType, Message as AlchemyMessage, MinimaxCompletions, Model, ModelCost, OpenAICompletions,
+    Provider, StopReason, StopReasonError, StopReasonSuccess, Tool, ToolCallId, ToolResultContent,
     ToolResultMessage as AlchemyToolResultMessage, Usage, UserContent, UserContentBlock,
     UserMessage as AlchemyUserMessage,
 };
@@ -18,6 +18,7 @@ use alchemy_llm::{OpenAICompletionsOptions, stream};
 use futures::StreamExt;
 use pyo3::exceptions::{PyRuntimeError, PyTypeError, PyValueError};
 use pyo3::prelude::*;
+use reqwest::header::CONTENT_TYPE;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -53,6 +54,12 @@ macro_rules! binding_debug {
         binding_debug_log($stream_id, format_args!($($arg)*))
     };
 }
+
+// The base64 cap matches claude-agent-sdk-rs; the byte cap matches OpenAI's
+// server-side per-image limit and applies to decoded and fetched data.
+const MAX_BASE64_TEXT: usize = 15 * 1024 * 1024;
+const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
+const IMAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn elapsed_ms(started_at: Instant) -> f64 {
     started_at.elapsed().as_secs_f64() * 1000.0
@@ -448,7 +455,7 @@ fn run_stream_thread_inner(
         .map_err(|error| format!("failed to build tokio runtime: {error}"))?;
 
     runtime.block_on(async {
-        let mut stream = build_stream(model_input, context_input, options_input)?;
+        let mut stream = build_stream(model_input, context_input, options_input).await?;
         let mut event_count: usize = 0;
         let mut last_event_at = opened_at;
 
@@ -501,12 +508,12 @@ fn run_stream_thread_inner(
     })
 }
 
-fn build_stream(
+async fn build_stream(
     model_input: PyModelInput,
     context_input: PyContextInput,
     options_input: Value,
 ) -> BindingResult<alchemy_llm::AssistantMessageEventStream> {
-    let context = convert_context(context_input)?;
+    let context = convert_context(context_input).await?;
     let options = convert_options(&options_input, &model_input.reasoning)?;
 
     match model_input.api.as_str() {
@@ -544,7 +551,9 @@ where
         provider,
         base_url: input.base_url.clone(),
         reasoning: reasoning_enabled,
-        input: vec![InputType::Text],
+        // Image blocks are converted and emitted only when the model declares
+        // image input; the OpenAI-like serializer drops them otherwise.
+        input: vec![InputType::Text, InputType::Image],
         cost: ModelCost {
             input: 0.0,
             output: 0.0,
@@ -558,12 +567,11 @@ where
     })
 }
 
-fn convert_context(input: PyContextInput) -> BindingResult<AlchemyContext> {
-    let messages = input
-        .messages
-        .into_iter()
-        .map(convert_message)
-        .collect::<BindingResult<Vec<_>>>()?;
+async fn convert_context(input: PyContextInput) -> BindingResult<AlchemyContext> {
+    let mut messages = Vec::with_capacity(input.messages.len());
+    for message in input.messages {
+        messages.push(convert_message(message).await?);
+    }
     let tools = input.tools.map(|items| {
         items
             .into_iter()
@@ -582,16 +590,15 @@ fn convert_context(input: PyContextInput) -> BindingResult<AlchemyContext> {
     })
 }
 
-fn convert_message(input: PyMessageInput) -> BindingResult<AlchemyMessage> {
+async fn convert_message(input: PyMessageInput) -> BindingResult<AlchemyMessage> {
     match input {
         PyMessageInput::User { content, timestamp } => {
+            let mut blocks = Vec::with_capacity(content.len());
+            for block in content {
+                blocks.push(convert_user_content(block).await?);
+            }
             Ok(AlchemyMessage::User(AlchemyUserMessage {
-                content: UserContent::Multi(
-                    content
-                        .into_iter()
-                        .map(convert_user_content)
-                        .collect::<BindingResult<Vec<_>>>()?,
-                ),
+                content: UserContent::Multi(blocks),
                 timestamp: timestamp.unwrap_or_else(current_timestamp_ms),
             }))
         }
@@ -604,20 +611,22 @@ fn convert_message(input: PyMessageInput) -> BindingResult<AlchemyMessage> {
             model,
             usage,
             error_message,
-        } => Ok(AlchemyMessage::Assistant(AlchemyAssistantMessage {
-            content: content
-                .into_iter()
-                .flatten()
-                .map(convert_assistant_content)
-                .collect::<BindingResult<Vec<_>>>()?,
-            api: parse_api(api.as_deref().unwrap_or("openai-completions"))?,
-            provider: parse_provider(provider.as_deref().unwrap_or("openai"))?,
-            model: model.unwrap_or_default(),
-            usage: usage.unwrap_or_default(),
-            stop_reason: parse_stop_reason(stop_reason.as_deref()),
-            error_message,
-            timestamp: timestamp.unwrap_or_else(current_timestamp_ms),
-        })),
+        } => {
+            let mut converted = Vec::with_capacity(content.len());
+            for item in content.into_iter().flatten() {
+                converted.push(convert_assistant_content(item).await?);
+            }
+            Ok(AlchemyMessage::Assistant(AlchemyAssistantMessage {
+                content: converted,
+                api: parse_api(api.as_deref().unwrap_or("openai-completions"))?,
+                provider: parse_provider(provider.as_deref().unwrap_or("openai"))?,
+                model: model.unwrap_or_default(),
+                usage: usage.unwrap_or_default(),
+                stop_reason: parse_stop_reason(stop_reason.as_deref()),
+                error_message,
+                timestamp: timestamp.unwrap_or_else(current_timestamp_ms),
+            }))
+        }
         PyMessageInput::ToolResult {
             tool_call_id,
             tool_name,
@@ -625,21 +634,24 @@ fn convert_message(input: PyMessageInput) -> BindingResult<AlchemyMessage> {
             details,
             is_error,
             timestamp,
-        } => Ok(AlchemyMessage::ToolResult(AlchemyToolResultMessage {
-            tool_call_id: ToolCallId::from(tool_call_id.unwrap_or_default()),
-            tool_name: tool_name.unwrap_or_default(),
-            content: content
-                .into_iter()
-                .map(convert_tool_result_content)
-                .collect::<BindingResult<Vec<_>>>()?,
-            details,
-            is_error: is_error.unwrap_or(false),
-            timestamp: timestamp.unwrap_or_else(current_timestamp_ms),
-        })),
+        } => {
+            let mut converted = Vec::with_capacity(content.len());
+            for item in content {
+                converted.push(convert_tool_result_content(item).await?);
+            }
+            Ok(AlchemyMessage::ToolResult(AlchemyToolResultMessage {
+                tool_call_id: ToolCallId::from(tool_call_id.unwrap_or_default()),
+                tool_name: tool_name.unwrap_or_default(),
+                content: converted,
+                details,
+                is_error: is_error.unwrap_or(false),
+                timestamp: timestamp.unwrap_or_else(current_timestamp_ms),
+            }))
+        }
     }
 }
 
-fn convert_user_content(input: PyUserContentInput) -> BindingResult<UserContentBlock> {
+async fn convert_user_content(input: PyUserContentInput) -> BindingResult<UserContentBlock> {
     match input {
         PyUserContentInput::Text { text } => {
             Ok(UserContentBlock::Text(alchemy_llm::types::TextContent {
@@ -647,14 +659,14 @@ fn convert_user_content(input: PyUserContentInput) -> BindingResult<UserContentB
                 text_signature: None,
             }))
         }
-        PyUserContentInput::Image { url, mime_type } => Err(format!(
-            "image input is not supported yet (url={:?}, mime_type={:?})",
-            url, mime_type
-        )),
+        PyUserContentInput::Image { url, mime_type } => {
+            let (data, mime_type) = resolve_image(url, mime_type).await?;
+            Ok(UserContentBlock::Image(ImageContent { data, mime_type }))
+        }
     }
 }
 
-fn convert_assistant_content(input: PyAssistantContentInput) -> BindingResult<Content> {
+async fn convert_assistant_content(input: PyAssistantContentInput) -> BindingResult<Content> {
     match input {
         PyAssistantContentInput::Text {
             text,
@@ -687,14 +699,16 @@ fn convert_assistant_content(input: PyAssistantContentInput) -> BindingResult<Co
                 thought_signature: None,
             },
         }),
-        PyAssistantContentInput::Image { url, mime_type } => Err(format!(
-            "assistant image content is not supported yet (url={:?}, mime_type={:?})",
-            url, mime_type
-        )),
+        PyAssistantContentInput::Image { url, mime_type } => {
+            let (data, mime_type) = resolve_image(url, mime_type).await?;
+            Ok(Content::Image {
+                inner: ImageContent { data, mime_type },
+            })
+        }
     }
 }
 
-fn convert_tool_result_content(
+async fn convert_tool_result_content(
     input: PyToolResultContentInput,
 ) -> BindingResult<ToolResultContent> {
     match input {
@@ -704,11 +718,171 @@ fn convert_tool_result_content(
                 text_signature: None,
             }))
         }
-        PyToolResultContentInput::Image { url, mime_type } => Err(format!(
-            "tool result image content is not supported yet (url={:?}, mime_type={:?})",
-            url, mime_type
-        )),
+        PyToolResultContentInput::Image { url, mime_type } => {
+            let (data, mime_type) = resolve_image(url, mime_type).await?;
+            Ok(ToolResultContent::Image(ImageContent { data, mime_type }))
+        }
     }
+}
+
+/// Resolve a Python-side image reference into raw bytes and a mime type.
+///
+/// Supported `url` forms, matching how the Python `ImageContent` type is used:
+/// - `data:<mime>;base64,<payload>` — mime taken from the URL prefix
+/// - raw base64 payload — mime taken from the `mime_type` field
+/// - `file://<path>` — read from disk, mime guessed from the file extension
+/// - `http://` / `https://` — fetched client-side with a timeout, mime taken
+///   from the `mime_type` field or the response Content-Type header
+///
+/// The fetch is consumer-triggered: the caller passes the URL, so only URLs
+/// the calling Python code already controls are reachable.
+async fn resolve_image(
+    url: Option<String>,
+    mime_type: Option<String>,
+) -> BindingResult<(Vec<u8>, String)> {
+    let Some(url) = url else {
+        return Err(
+            "image content requires a `url` (data:, file:, http(s):, or raw base64)".into(),
+        );
+    };
+
+    if let Some(rest) = url.strip_prefix("data:") {
+        return resolve_data_url(&url, rest, mime_type);
+    }
+    if let Some(path) = url.strip_prefix("file://") {
+        return resolve_file_url(path, mime_type);
+    }
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return fetch_remote_image(&url, mime_type, IMAGE_FETCH_TIMEOUT).await;
+    }
+    // Fallback: treat the whole value as a raw base64 payload.
+    let data = decode_base64(&url).map_err(|error| {
+        format!(
+            "invalid image url `{url}`: expected a data:, file:, or http(s): url \
+             or a raw base64 payload ({error})"
+        )
+    })?;
+    Ok((data, image_mime(mime_type, None, "")))
+}
+
+fn resolve_data_url(
+    url: &str,
+    rest: &str,
+    mime_type: Option<String>,
+) -> BindingResult<(Vec<u8>, String)> {
+    let (meta, payload) = rest.split_once(";base64,").ok_or_else(|| {
+        format!("invalid image data url `{url}`: expected `data:<mime>;base64,<payload>`")
+    })?;
+    // The data URL prefix is authoritative; the field is only a fallback.
+    let prefix_mime = meta
+        .split(';')
+        .next()
+        .filter(|mime| !mime.is_empty())
+        .map(str::to_string);
+    let data = decode_base64(payload)
+        .map_err(|error| format!("invalid base64 payload in image url `{url}`: {error}"))?;
+    Ok((data, image_mime(prefix_mime, mime_type, "")))
+}
+
+fn resolve_file_url(path: &str, mime_type: Option<String>) -> BindingResult<(Vec<u8>, String)> {
+    let data = std::fs::read(path)
+        .map_err(|error| format!("failed to read image file `{path}`: {error}"))?;
+    if data.is_empty() {
+        return Err(format!("image file `{path}` is empty"));
+    }
+    if data.len() > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "image file `{path}` exceeds the {MAX_IMAGE_BYTES} byte limit"
+        ));
+    }
+    Ok((data, image_mime(mime_type, None, path)))
+}
+
+async fn fetch_remote_image(
+    url: &str,
+    mime_type: Option<String>,
+    timeout: Duration,
+) -> BindingResult<(Vec<u8>, String)> {
+    let client = reqwest::Client::builder()
+        .timeout(timeout)
+        .build()
+        .map_err(|error| format!("failed to build image fetch client: {error}"))?;
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|error| format!("failed to fetch image url `{url}`: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "failed to fetch image url `{url}`: HTTP {}",
+            response.status()
+        ));
+    }
+    // Check Content-Length before downloading so oversized responses are
+    // rejected without transferring the body.
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_IMAGE_BYTES as u64)
+    {
+        return Err(format!(
+            "image url `{url}` exceeds the {MAX_IMAGE_BYTES} byte limit"
+        ));
+    }
+    let header_mime = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.split(';').next().unwrap_or(value).trim().to_string());
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| format!("failed to read image body from `{url}`: {error}"))?;
+    if bytes.is_empty() {
+        return Err(format!("image url `{url}` returned an empty body"));
+    }
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(format!(
+            "image url `{url}` exceeds the {MAX_IMAGE_BYTES} byte limit"
+        ));
+    }
+    Ok((bytes.to_vec(), image_mime(mime_type, header_mime, url)))
+}
+
+/// Pick a mime type: explicit parameter > data-URL prefix / Content-Type
+/// header > file extension > `image/jpeg`. Only `image/*` candidates are
+/// accepted; anything else falls through to the next source.
+fn image_mime(param: Option<String>, informative: Option<String>, path: &str) -> String {
+    let pick = |candidate: Option<String>| candidate.filter(|mime| mime.starts_with("image/"));
+    if let Some(mime) = pick(param) {
+        return mime;
+    }
+    if let Some(mime) = pick(informative) {
+        return mime;
+    }
+    let extension = path
+        .rsplit_once('.')
+        .map(|(_, extension)| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+    match extension.as_str() {
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "tiff" | "tif" => "image/tiff",
+        _ => "image/jpeg",
+    }
+    .into()
+}
+
+fn decode_base64(payload: &str) -> Result<Vec<u8>, String> {
+    if payload.len() > MAX_BASE64_TEXT {
+        return Err(format!(
+            "base64 payload exceeds the {MAX_BASE64_TEXT} character limit"
+        ));
+    }
+    ImageContent::from_base64(payload, String::new())
+        .map(|image| image.data)
+        .map_err(|error| error.to_string())
 }
 
 fn convert_options(
@@ -769,7 +943,11 @@ fn content_to_json(content: &Content) -> BindingResult<Value> {
             "name": inner.name,
             "arguments": require_object(&inner.arguments, "tool_call.arguments")?,
         })),
-        Content::Image { .. } => Err("image content is not supported by tinyagent._alchemy".into()),
+        Content::Image { inner } => Ok(json!({
+            "type": "image",
+            "url": format!("data:{};base64,{}", inner.mime_type, inner.to_base64()),
+            "mime_type": inner.mime_type,
+        })),
     }
 }
 
@@ -1160,8 +1338,8 @@ mod tests {
         assert_eq!(payload["reason"], "tool_calls");
     }
 
-    #[test]
-    fn assistant_message_input_accepts_snake_case_tool_call() {
+    #[tokio::test]
+    async fn assistant_message_input_accepts_snake_case_tool_call() {
         let message: PyMessageInput = serde_json::from_value(json!({
             "role": "assistant",
             "content": [
@@ -1176,12 +1354,145 @@ mod tests {
         }))
         .expect("assistant message should deserialize");
 
-        let converted = convert_message(message).expect("message should convert");
+        let converted = convert_message(message)
+            .await
+            .expect("message should convert");
         let AlchemyMessage::Assistant(message) = converted else {
             panic!("expected assistant message");
         };
 
         assert!(matches!(message.stop_reason, StopReason::ToolUse));
         assert_eq!(message.content.len(), 1);
+    }
+
+    fn test_user_message(content: Value) -> PyMessageInput {
+        serde_json::from_value(json!({
+            "role": "user",
+            "content": [content],
+        }))
+        .expect("user message should deserialize")
+    }
+
+    fn assert_single_image_block(message: AlchemyMessage) -> (Vec<u8>, String) {
+        let AlchemyMessage::User(user) = message else {
+            panic!("expected user message");
+        };
+        let UserContent::Multi(blocks) = user.content else {
+            panic!("expected multi content");
+        };
+        assert_eq!(blocks.len(), 1);
+        match &blocks[0] {
+            UserContentBlock::Image(image) => (image.data.clone(), image.mime_type.clone()),
+            _ => panic!("expected image block"),
+        }
+    }
+
+    #[test]
+    fn convert_model_accepts_image_input() {
+        let model =
+            convert_model::<OpenAICompletions>(&test_model(json!(false)), OpenAICompletions)
+                .expect("model should convert");
+        assert!(model.input.contains(&InputType::Image));
+    }
+
+    #[tokio::test]
+    async fn user_image_data_url_converts_to_image_block() {
+        let message = test_user_message(json!({
+            "type": "image",
+            "url": "data:image/png;base64,iVBORw0KGgo=",
+            "mime_type": null,
+        }));
+        let (data, mime) = assert_single_image_block(convert_message(message).await.unwrap());
+        assert_eq!(data, vec![137, 80, 78, 71, 13, 10, 26, 10]);
+        assert_eq!(mime, "image/png");
+    }
+
+    #[tokio::test]
+    async fn user_image_data_url_rejects_invalid_base64() {
+        let message = test_user_message(json!({
+            "type": "image",
+            "url": "data:image/png;base64,@@@not-base64@@@",
+            "mime_type": null,
+        }));
+        let error = convert_message(message)
+            .await
+            .expect_err("invalid base64 should fail");
+        assert!(error.contains("invalid base64 payload"));
+    }
+
+    #[tokio::test]
+    async fn user_image_raw_base64_uses_mime_type_field() {
+        let message = test_user_message(json!({
+            "type": "image",
+            "url": "iVBORw0KGgo=",
+            "mime_type": "image/jpeg",
+        }));
+        let (data, mime) = assert_single_image_block(convert_message(message).await.unwrap());
+        assert_eq!(data, vec![137, 80, 78, 71, 13, 10, 26, 10]);
+        assert_eq!(mime, "image/jpeg");
+    }
+
+    #[tokio::test]
+    async fn user_image_file_url_reads_bytes_and_guesses_mime() {
+        let path = std::env::temp_dir().join(format!("ta-image-test-{}.png", std::process::id()));
+        std::fs::write(&path, [137, 80, 78, 71]).expect("write temp image");
+        let message = test_user_message(json!({
+            "type": "image",
+            "url": format!("file://{}", path.display()),
+            "mime_type": null,
+        }));
+        let (data, mime) = assert_single_image_block(convert_message(message).await.unwrap());
+        std::fs::remove_file(&path).expect("remove temp image");
+        assert_eq!(data, vec![137, 80, 78, 71]);
+        assert_eq!(mime, "image/png");
+    }
+
+    #[tokio::test]
+    async fn user_image_rejects_unrecognized_values() {
+        let message = test_user_message(json!({
+            "type": "image",
+            "url": "ftp://example.com/image.png",
+            "mime_type": null,
+        }));
+        let error = convert_message(message)
+            .await
+            .expect_err("unknown scheme should fail");
+        assert!(error.contains("expected a data:, file:, or http(s): url"));
+    }
+
+    #[tokio::test]
+    async fn fetch_remote_image_reports_connection_failure() {
+        let error = fetch_remote_image(
+            "http://127.0.0.1:1/never-listening.png",
+            None,
+            Duration::from_secs(2),
+        )
+        .await
+        .expect_err("unreachable image url should fail");
+        assert!(error.contains("failed to fetch image url"));
+    }
+
+    #[test]
+    fn assistant_image_content_round_trips_to_data_url() {
+        let message = AlchemyAssistantMessage {
+            content: vec![Content::Image {
+                inner: ImageContent {
+                    data: vec![1, 2, 3],
+                    mime_type: "image/png".to_string(),
+                },
+            }],
+            api: alchemy_llm::types::Api::OpenAICompletions,
+            provider: Provider::Known(alchemy_llm::types::KnownProvider::OpenRouter),
+            model: "moonshotai/kimi-k2.5".to_string(),
+            usage: Usage::default(),
+            stop_reason: StopReason::Stop,
+            error_message: None,
+            timestamp: 123,
+        };
+
+        let payload = assistant_message_to_json(&message).expect("message should serialize");
+        assert_eq!(payload["content"][0]["type"], "image");
+        assert_eq!(payload["content"][0]["url"], "data:image/png;base64,AQID");
+        assert_eq!(payload["content"][0]["mime_type"], "image/png");
     }
 }

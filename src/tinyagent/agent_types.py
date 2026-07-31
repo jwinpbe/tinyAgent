@@ -185,7 +185,7 @@ class ToolCallContent(_TaggedContent, tag="tool_call"):
 
 ToolCall: TypeAlias = ToolCallContent
 
-AssistantContent: TypeAlias = TextContent | ThinkingContent | ToolCallContent
+AssistantContent: TypeAlias = TextContent | ThinkingContent | ToolCallContent | ImageContent
 
 
 class UserMessage(_TaggedMessage, tag="user"):

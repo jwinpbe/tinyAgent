@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import msgspec
 import pytest
 
 from tinyagent.agent_types import (
@@ -11,7 +12,9 @@ from tinyagent.agent_types import (
     AgentEvent,
     AgentMessage,
     AgentStartEvent,
+    AssistantMessage,
     EventStream,
+    ImageContent,
     MessageEndEvent,
     MessageStartEvent,
     MessageUpdateEvent,
@@ -216,3 +219,24 @@ def test_tool_execution_end_event_equality() -> None:
     )
     assert event1 == event2
     assert event1 != event3
+
+
+def test_assistant_message_accepts_image_content_block() -> None:
+    """Verify image blocks round-trip through AssistantMessage conversion."""
+    message = msgspec.convert(
+        {
+            "role": "assistant",
+            "content": [{"type": "image", "url": "data:image/png;base64,AQID", "mime_type": "image/png"}],
+            "stop_reason": "stop",
+            "api": "openai-completions",
+            "provider": "openrouter",
+            "model": "moonshotai/kimi-k2.5",
+            "usage": {},
+            "error_message": None,
+            "timestamp": 123,
+        },
+        AssistantMessage,
+    )
+    assert isinstance(message.content[0], ImageContent)
+    assert message.content[0].url == "data:image/png;base64,AQID"
+    assert message.content[0].mime_type == "image/png"

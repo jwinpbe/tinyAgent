@@ -223,6 +223,8 @@ def _assistant_content_item_has_meaningful_content(item: object) -> bool:
         return _is_nonempty_str(item.text)
     if isinstance(item, ToolCallContent):
         return _is_nonempty_str(item.name)
+    if isinstance(item, ImageContent):
+        return _is_nonempty_str(item.url)
 
     return False
 
